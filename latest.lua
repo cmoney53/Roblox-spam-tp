@@ -1,52 +1,42 @@
-local Players = game:GetService("Players")
+-- START OF TP SPAM MODULE (Add to the END of the Infinite Yield script)
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
-
 local isSpammingTP = false
 local spamTPConnection = nil
-local player = Players.LocalPlayer
+local originalCFrame = nil -- Stores the position to teleport to
 
--- Create the button frame
-local TPButton = Instance.new("TextButton")
-TPButton.Name = "RapidTP_Toggle"
-TPButton.Parent = CoreGui
-TPButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-TPButton.BorderColor3 = Color3.fromRGB(0, 0, 0)
-TPButton.Size = UDim2.new(0, 150, 0, 30)
-TPButton.Position = UDim2.new(0.01, 0, 0.25, 0) -- Adjust position as needed
-TPButton.Font = Enum.Font.SourceSansBold
-TPButton.FontSize = Enum.FontSize.Size18
-TPButton.Text = "TP SPAM [OFF]"
-TPButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-TPButton.ZIndex = 99
-
--- Logic function to start/stop the teleport
-local function ToggleRapidTP()
-    local char = player.Character
+-- Function to start/stop the rapid teleport
+local function ToggleRapidTP(speaker)
+    local char = speaker.Character
+    -- Get the main part of the character
     local root = char and char:FindFirstChild('HumanoidRootPart')
-
+    
     if not root then
-        TPButton.Text = "TP SPAM [ERROR: No Root]"
+        -- Uses the existing notification system
+        notify('SpamTP', 'Character or HumanoidRootPart not found.')
         return
     end
 
     if isSpammingTP then
-        -- STOP
+        -- Stop the teleport
         isSpammingTP = false
         if spamTPConnection then
             spamTPConnection:Disconnect()
             spamTPConnection = nil
         end
-        TPButton.Text = "TP SPAM [OFF]"
+        originalCFrame = nil
+        notify('SpamTP', 'Rapid teleport **STOPPED**.', 'Stop')
     else
-        -- START
+        -- Start the teleport
         isSpammingTP = true
-        local originalCFrame = root.CFrame
-
+        -- Save the current position
+        originalCFrame = root.CFrame
+        
+        -- Use Heartbeat for the fastest possible loop
         spamTPConnection = RunService.Heartbeat:Connect(function()
             if isSpammingTP and root.Parent then
                 root.CFrame = originalCFrame
             else
+                -- Auto-disconnect if character is gone or toggle flipped
                 if spamTPConnection then
                     spamTPConnection:Disconnect()
                     spamTPConnection = nil
@@ -54,33 +44,23 @@ local function ToggleRapidTP()
                 isSpammingTP = false
             end
         end)
-        TPButton.Text = "TP SPAM [ON]"
+        notify('SpamTP', 'Rapid teleport **STARTED**. Spawning to current spot.', 'Play')
     end
 end
 
--- Connect the function to the button click
-TPButton.MouseButton1Click:Connect(ToggleRapidTP)
+-- 1. Register the main toggle command, which creates the entry in the GUI list.
+-- The command will appear as "spamtp" in the menu.
+addcmd('spamtp', {'rapidtp', 'spamteleport', 'tpspam'}, function(args, speaker)
+    ToggleRapidTP(speaker)
+end, nil, 'Toggles rapid teleport to your current spot. Run it once to start, run it again to stop.')
 
--- Optional: Make the button dragable
-local dragging
-local dragStart
-
-TPButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
+-- 2. Register an explicit stop command (optional, but convenient for the command bar).
+-- The GUI entry will be the 'spamtp' command itself.
+addcmd('unspamtp', {'stopspamtp', 'nospamtp'}, function(args, speaker)
+    if isSpammingTP then
+        ToggleRapidTP(speaker) -- Calling the toggle function to turn it off
+    else
+        notify('SpamTP', 'Rapid teleport is not active.')
     end
-end)
-
-TPButton.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        TPButton:TweenPosition(UDim2.new(TPButton.Position.X.Scale, TPButton.Position.X.Offset + delta.X, TPButton.Position.Y.Scale, TPButton.Position.Y.Offset + delta.Y), "Out", "Quad", 0.05, true)
-        dragStart = input.Position
-    end
-end)
+end, nil, 'Stops the rapid teleport effect.')
+-- END OF TP SPAM MODULE
