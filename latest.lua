@@ -1,42 +1,52 @@
--- START OF TP SPAM MODULE (Add to the END of the Infinite Yield script)
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
 local isSpammingTP = false
 local spamTPConnection = nil
-local originalCFrame = nil -- Stores the position to teleport to
+local player = Players.LocalPlayer
 
--- Function to start/stop the rapid teleport
-local function ToggleRapidTP(speaker)
-    local char = speaker.Character
-    -- Get the main part of the character
+-- Create the button frame
+local TPButton = Instance.new("TextButton")
+TPButton.Name = "RapidTP_Toggle"
+TPButton.Parent = CoreGui -- Attaching to CoreGui ensures it bypasses most UI visibility issues
+TPButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+TPButton.BorderColor3 = Color3.fromRGB(0, 0, 0)
+TPButton.Size = UDim2.new(0, 150, 0, 30)
+TPButton.Position = UDim2.new(0.01, 0, 0.25, 0) -- Top-left corner
+TPButton.Font = Enum.Font.SourceSansBold
+TPButton.FontSize = Enum.FontSize.Size18
+TPButton.Text = "TP SPAM [OFF]"
+TPButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+TPButton.ZIndex = 99 -- High ZIndex to ensure visibility
+
+-- Logic function to start/stop the teleport
+local function ToggleRapidTP()
+    local char = player.Character
     local root = char and char:FindFirstChild('HumanoidRootPart')
-    
+
     if not root then
-        -- Uses the existing notification system
-        notify('SpamTP', 'Character or HumanoidRootPart not found.')
+        TPButton.Text = "TP SPAM [ERROR: No Root]"
         return
     end
 
     if isSpammingTP then
-        -- Stop the teleport
+        -- STOP
         isSpammingTP = false
         if spamTPConnection then
             spamTPConnection:Disconnect()
             spamTPConnection = nil
         end
-        originalCFrame = nil
-        notify('SpamTP', 'Rapid teleport **STOPPED**.', 'Stop')
+        TPButton.Text = "TP SPAM [OFF]"
     else
-        -- Start the teleport
+        -- START
         isSpammingTP = true
-        -- Save the current position
-        originalCFrame = root.CFrame
-        
-        -- Use Heartbeat for the fastest possible loop
+        local originalCFrame = root.CFrame
+
         spamTPConnection = RunService.Heartbeat:Connect(function()
             if isSpammingTP and root.Parent then
                 root.CFrame = originalCFrame
             else
-                -- Auto-disconnect if character is gone or toggle flipped
                 if spamTPConnection then
                     spamTPConnection:Disconnect()
                     spamTPConnection = nil
@@ -44,23 +54,9 @@ local function ToggleRapidTP(speaker)
                 isSpammingTP = false
             end
         end)
-        notify('SpamTP', 'Rapid teleport **STARTED**. Spawning to current spot.', 'Play')
+        TPButton.Text = "TP SPAM [ON]"
     end
 end
 
--- 1. Register the main toggle command, which creates the entry in the GUI list.
--- The command will appear as "spamtp" in the menu.
-addcmd('spamtp', {'rapidtp', 'spamteleport', 'tpspam'}, function(args, speaker)
-    ToggleRapidTP(speaker)
-end, nil, 'Toggles rapid teleport to your current spot. Run it once to start, run it again to stop.')
-
--- 2. Register an explicit stop command (optional, but convenient for the command bar).
--- The GUI entry will be the 'spamtp' command itself.
-addcmd('unspamtp', {'stopspamtp', 'nospamtp'}, function(args, speaker)
-    if isSpammingTP then
-        ToggleRapidTP(speaker) -- Calling the toggle function to turn it off
-    else
-        notify('SpamTP', 'Rapid teleport is not active.')
-    end
-end, nil, 'Stops the rapid teleport effect.')
--- END OF TP SPAM MODULE
+-- Connect the function to the button click
+TPButton.MouseButton1Click:Connect(ToggleRapidTP)
