@@ -1,43 +1,41 @@
 -- =========================================================
---             MOBILE-OPTIMIZED SPAM TELEPORTER (FINAL)
+--             SIMPLE SPAM TELEPORTER (MOBILE ONLY)
 -- =========================================================
 
 -- 1. Setup Global References
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui") -- The most reliable mobile parent
 local RunService = game:GetService("RunService")
 
 -- 2. Configuration Variables
-local TELEPORT_DESTINATIONS = {} 
-local SPAM_INTERVAL = 0.05
-local IsActive = false
-local LoopThread = nil
-local IsVisible = true
+local SPAM_POSITION = Vector3.new(0, 10, 0) 
+local SPAM_INTERVAL = 0.05                  
 
--- 3. Core Logic Functions (Teleporting/Adding/Clearing - Omitted for brevity, they are stable)
+-- 3. State and Thread Management
+local IsActive = false                       
+local LoopThread = nil                       
 
+-- Helper function to reliably get the character's root part
 local function getRootPart()
     local character = LocalPlayer.Character
     if not character then character = LocalPlayer.CharacterAdded:Wait() end
     return character and character:FindFirstChild("HumanoidRootPart")
 end
 
+-- 4. Main Teleport Logic Function
 local function StartTeleportSpam()
     if LoopThread then task.cancel(LoopThread) end
 
     if IsActive then
         LoopThread = task.spawn(function()
-            local currentIndex = 1
             while IsActive do
                 local HumanoidRootPart = getRootPart()
-                if not HumanoidRootPart or #TELEPORT_DESTINATIONS == 0 then
-                    IsActive = false; UpdateButtonText(); break
-                end
                 
-                pcall(function() HumanoidRootPart.CFrame = CFrame.new(TELEPORT_DESTINATIONS[currentIndex]) end)
-
-                currentIndex = currentIndex + 1
-                if currentIndex > #TELEPORT_DESTINATIONS then currentIndex = 1 end
+                if HumanoidRootPart then
+                    -- The core teleport action
+                    HumanoidRootPart.CFrame = CFrame.new(SPAM_POSITION)
+                end
                 
                 task.wait(SPAM_INTERVAL)
             end
@@ -45,6 +43,25 @@ local function StartTeleportSpam()
     end
 end
 
+-- 5. Auto-Set Coordinates Function
+local function SetSpamPosition(CoordStatusLabel, StartTeleportSpam)
+    local HumanoidRootPart = getRootPart()
+    
+    if HumanoidRootPart then
+        local currentPos = HumanoidRootPart.Position
+        SPAM_POSITION = Vector3.new(
+            math.floor(currentPos.X + 0.5), 
+            math.floor(currentPos.Y + 0.5), 
+            math.floor(currentPos.Z + 0.5)
+        )
+        
+        CoordStatusLabel.Text = "Target: " .. tostring(SPAM_POSITION)
+        
+        if IsActive then StartTeleportSpam() end
+    end
+end
+
+-- 6. Toggle and GUI Update Functions
 local function UpdateButtonText(ToggleButton, IsActive)
     if ToggleButton then
         ToggleButton.BackgroundColor3 = IsActive and Color3.new(0.2, 0.8, 0.2) or Color3.new(0.8, 0.2, 0.2)
@@ -64,179 +81,81 @@ local function ToggleSpam(DelayBox, ToggleButton, StartTeleportSpam)
     UpdateButtonText(ToggleButton, IsActive)
 end
 
-local function AddDestination(CoordStatusLabel, StartTeleportSpam)
-    local HumanoidRootPart = getRootPart()
-    if HumanoidRootPart then
-        local pos = HumanoidRootPart.Position
-        table.insert(TELEPORT_DESTINATIONS, Vector3.new(math.floor(pos.X + 0.5), math.floor(pos.Y + 0.5), math.floor(pos.Z + 0.5)))
-        CoordStatusLabel.Text = #TELEPORT_DESTINATIONS .. " Destinations Saved"
-        if IsActive then StartTeleportSpam() end
-    end
-end
+-- 7. GUI Setup (Minimum elements, direct creation)
 
-local function ClearDestinations(CoordStatusLabel, ToggleButton)
-    TELEPORT_DESTINATIONS = {} 
-    if IsActive then IsActive = false; if LoopThread then task.cancel(LoopThread) end end
-    CoordStatusLabel.Text = "0 Destinations Saved"
-    UpdateButtonText(ToggleButton, IsActive)
-end
+game.Loaded:Wait() -- Wait for the game to be ready
 
-local function ToggleVisibility(MainFrame, VisibilityToggle)
-    IsVisible = not IsVisible
-    
-    if MainFrame then MainFrame.Visible = IsVisible end
-    
-    if VisibilityToggle then
-        VisibilityToggle.Text = IsVisible and "HIDE" or "SHOW"
-        -- Use simple colors for mobile legibility
-        VisibilityToggle.BackgroundColor3 = IsVisible and Color3.new(0.3, 0.3, 0.3) or Color3.new(0.6, 0.6, 0.6)
-    end
-end
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SimpleSpamTP_GUI"
+ScreenGui.Parent = PlayerGui -- Use the most compatible mobile parent
 
-local function MakeDraggable(frame, handle)
-    local dragging, dragInput, dragStart, startPos
-    local function DoDrag(input)
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 200, 0, 160) -- Small size for mobile
+MainFrame.Position = UDim2.new(0.5, -100, 0.2, 0) -- Centered top
+MainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+MainFrame.Parent = ScreenGui
 
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; dragStart = input.Position; startPos = frame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-        end
-    end)
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Text = "Spam Teleporter"
+TitleLabel.Font = Enum.Font.SourceSansBold
+TitleLabel.TextSize = 16
+TitleLabel.Size = UDim2.new(1, 0, 0, 25)
+TitleLabel.TextColor3 = Color3.new(1, 1, 1)
+TitleLabel.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
+TitleLabel.Parent = MainFrame
 
-    handle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
-    end)
+local DelayLabel = Instance.new("TextLabel")
+DelayLabel.Text = "Interval (Sec):"
+DelayLabel.Font = Enum.Font.SourceSans
+DelayLabel.TextSize = 14
+DelayLabel.Size = UDim2.new(0.5, 0, 0, 20)
+DelayLabel.Position = UDim2.new(0, 0, 0, 30)
+DelayLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+DelayLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+DelayLabel.TextXAlignment = Enum.TextXAlignment.Left
+DelayLabel.Parent = MainFrame
 
-    RunService.Heartbeat:Connect(function()
-        if dragging and dragInput then DoDrag(dragInput) end
-    end)
-end
+local DelayBox = Instance.new("TextBox")
+DelayBox.Text = tostring(SPAM_INTERVAL)
+DelayBox.Font = Enum.Font.SourceSans
+DelayBox.TextSize = 14
+DelayBox.Size = UDim2.new(0.5, 0, 0, 20)
+DelayBox.Position = UDim2.new(0.5, 0, 0, 30)
+DelayBox.PlaceholderText = "e.g., 0.01"
+DelayBox.TextColor3 = Color3.new(1, 1, 1)
+DelayBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+DelayBox.Parent = MainFrame
 
--- 4. GUI Construction (Mobile Fixes Applied)
-local MainFrame, TitleLabel, VisibilityToggle, ToggleButton, DelayBox, CoordStatusLabel = nil
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "Spam_Toggle"
+ToggleButton.Size = UDim2.new(1, 0, 0, 35)
+ToggleButton.Position = UDim2.new(0, 0, 0, 55)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.TextSize = 16
+ToggleButton.Parent = MainFrame
+ToggleButton.MouseButton1Click:Connect(function() ToggleSpam(DelayBox, ToggleButton, StartTeleportSpam) end)
 
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-game.Loaded:Wait()
+local SetButton = Instance.new("TextButton")
+SetButton.Text = "Set Target Position (I'm here)"
+SetButton.Size = UDim2.new(1, 0, 0, 35)
+SetButton.Position = UDim2.new(0, 0, 0, 90)
+SetButton.BackgroundColor3 = Color3.new(0.1, 0.5, 0.9)
+SetButton.TextColor3 = Color3.new(1, 1, 1)
+SetButton.Font = Enum.Font.SourceSans
+SetButton.TextSize = 14
+SetButton.Parent = MainFrame
 
-local guiSuccess, guiResult = pcall(function()
-    
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "MultiSpamTP_GUI"
-    ScreenGui.Parent = PlayerGui -- 🌟 MOBILE FIX: Use PlayerGui for better compatibility
+local CoordStatusLabel = Instance.new("TextLabel")
+CoordStatusLabel.Text = "Target: " .. tostring(SPAM_POSITION)
+CoordStatusLabel.Font = Enum.Font.SourceSans
+CoordStatusLabel.TextSize = 12
+CoordStatusLabel.Size = UDim2.new(1, 0, 0, 20)
+CoordStatusLabel.Position = UDim2.new(0, 0, 0, 125)
+CoordStatusLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+CoordStatusLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+CoordStatusLabel.Parent = MainFrame
 
-    -- 1. Visibility Toggle Button (Top-left, always visible)
-    VisibilityToggle = Instance.new("TextButton")
-    VisibilityToggle.Text = "HIDE"
-    VisibilityToggle.Font = Enum.Font.SourceSansBold
-    VisibilityToggle.TextSize = 14
-    VisibilityToggle.Size = UDim2.new(0, 50, 0, 25)
-    VisibilityToggle.Position = UDim2.new(0.01, 0, 0.01, 0) -- Top left corner
-    VisibilityToggle.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    VisibilityToggle.TextColor3 = Color3.new(1, 1, 1)
-    VisibilityToggle.Parent = ScreenGui
-    VisibilityToggle.MouseButton1Click:Connect(function() ToggleVisibility(MainFrame, VisibilityToggle) end)
+SetButton.MouseButton1Click:Connect(function() SetSpamPosition(CoordStatusLabel, StartTeleportSpam) end)
 
-    -- 2. Main Draggable Frame
-    MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 200, 0, 200) -- 🌟 MOBILE FIX: Reduced size for phone screen
-    MainFrame.Position = UDim2.new(0.5, -100, 0.2, 0) -- 🌟 MOBILE FIX: Adjusted starting position
-    MainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    MainFrame.Parent = ScreenGui
-    MainFrame.Visible = IsVisible
-
-    -- Title Label (Draggable Handle)
-    TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Text = "Multi-Point Spam TP"
-    TitleLabel.Font = Enum.Font.SourceSansBold
-    TitleLabel.TextSize = 16 -- 🌟 MOBILE FIX: Reduced text size
-    TitleLabel.Size = UDim2.new(1, 0, 0, 25)
-    TitleLabel.TextColor3 = Color3.new(1, 1, 1)
-    TitleLabel.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-    TitleLabel.Parent = MainFrame
-    MakeDraggable(MainFrame, TitleLabel)
-
-    -- Content Frame (The body of the GUI)
-    local ContentFrame = Instance.new("Frame")
-    ContentFrame.Size = UDim2.new(1, 0, 1, -25)
-    ContentFrame.Position = UDim2.new(0, 0, 0, 25)
-    ContentFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    ContentFrame.BorderSizePixel = 0
-    ContentFrame.Parent = MainFrame
-
-    -- UI Elements within ContentFrame
-    local DelayLabel = Instance.new("TextLabel")
-    DelayLabel.Text = "Interval (Sec):"
-    DelayLabel.Font = Enum.Font.SourceSans
-    DelayLabel.TextSize = 14
-    DelayLabel.Size = UDim2.new(0.5, 0, 0, 20)
-    DelayLabel.Position = UDim2.new(0, 0, 0, 5)
-    DelayLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-    DelayLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    DelayLabel.TextXAlignment = Enum.TextXAlignment.Left
-    DelayLabel.Parent = ContentFrame
-
-    DelayBox = Instance.new("TextBox")
-    DelayBox.Text = tostring(SPAM_INTERVAL)
-    DelayBox.Font = Enum.Font.SourceSans
-    DelayBox.TextSize = 14
-    DelayBox.Size = UDim2.new(0.5, 0, 0, 20)
-    DelayBox.Position = UDim2.new(0.5, 0, 0, 5)
-    DelayBox.PlaceholderText = "e.g., 0.01"
-    DelayBox.TextColor3 = Color3.new(1, 1, 1)
-    DelayBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-    DelayBox.Parent = ContentFrame
-
-    ToggleButton = Instance.new("TextButton")
-    ToggleButton.Name = "Spam_Toggle"
-    ToggleButton.Size = UDim2.new(1, 0, 0, 35)
-    ToggleButton.Position = UDim2.new(0, 0, 0, 30)
-    ToggleButton.Font = Enum.Font.SourceSansBold
-    ToggleButton.TextSize = 16
-    ToggleButton.Parent = ContentFrame
-    ToggleButton.MouseButton1Click:Connect(function() ToggleSpam(DelayBox, ToggleButton, StartTeleportSpam) end)
-
-    local AddButton = Instance.new("TextButton")
-    AddButton.Text = "Add Current Position"
-    AddButton.Size = UDim2.new(1, 0, 0, 35)
-    AddButton.Position = UDim2.new(0, 0, 0, 65)
-    AddButton.BackgroundColor3 = Color3.new(0.1, 0.5, 0.9)
-    AddButton.TextColor3 = Color3.new(1, 1, 1)
-    AddButton.Font = Enum.Font.SourceSans
-    AddButton.TextSize = 14
-    AddButton.Parent = ContentFrame
-    AddButton.MouseButton1Click:Connect(function() AddDestination(CoordStatusLabel, StartTeleportSpam) end)
-
-    local ClearButton = Instance.new("TextButton")
-    ClearButton.Text = "Clear All Destinations"
-    ClearButton.Size = UDim2.new(1, 0, 0, 35)
-    ClearButton.Position = UDim2.new(0, 0, 0, 100)
-    ClearButton.BackgroundColor3 = Color3.new(0.7, 0.3, 0.1)
-    ClearButton.TextColor3 = Color3.new(1, 1, 1)
-    ClearButton.Font = Enum.Font.SourceSans
-    ClearButton.TextSize = 14
-    ClearButton.Parent = ContentFrame
-    ClearButton.MouseButton1Click:Connect(function() ClearDestinations(CoordStatusLabel, ToggleButton) end)
-
-    CoordStatusLabel = Instance.new("TextLabel")
-    CoordStatusLabel.Text = "0 Destinations Saved"
-    CoordStatusLabel.Font = Enum.Font.SourceSans
-    CoordStatusLabel.TextSize = 12
-    CoordStatusLabel.Size = UDim2.new(1, 0, 0, 20)
-    CoordStatusLabel.Position = UDim2.new(0, 0, 0, 135)
-    CoordStatusLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-    CoordStatusLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    CoordStatusLabel.Parent = ContentFrame
-    
-    UpdateButtonText(ToggleButton, IsActive)
-    
-end) -- End pcall
-
-if guiSuccess then
-    print("Mobile-Optimized Spam TP GUI successfully loaded!")
-else
-    error("FATAL ERROR: GUI construction failed! Error details: " .. tostring(guiResult))
-end
+UpdateButtonText(ToggleButton, IsActive) 
+print("Minimal Spam Teleporter (Mobile Compatibility) Script Loaded!")
