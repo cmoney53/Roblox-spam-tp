@@ -1,5 +1,5 @@
 -- =========================================================
---             MULTI-DESTINATION (MINIMAL LENGTH)
+--             MULTI-DESTINATION (MINIMAL LENGTH & TOP-RIGHT)
 -- =========================================================
 
 local function c(name)
@@ -109,103 +109,17 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MultiSpamTP_GUI"
 ScreenGui.Parent = PlayerGui
 
+-- TOP-RIGHT FIX 1: Visibility Toggle Button
 VisibilityToggle = Instance.new("TextButton")
 VisibilityToggle.Text = "HIDE"
 VisibilityToggle.Font = Enum.Font.SourceSansBold
 VisibilityToggle.TextSize = 14
 VisibilityToggle.Size = UDim2.new(0, 50, 0, 25)
-VisibilityToggle.Position = UDim2.new(0.01, 0, 0.01, 0)
+VisibilityToggle.Position = UDim2.new(1, -55, 0.01, 0) -- Scaled 1, Minus its size (50) + 5px margin
 VisibilityToggle.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
 VisibilityToggle.TextColor3 = Color3.new(1, 1, 1)
 VisibilityToggle.Parent = ScreenGui
 VisibilityToggle.MouseButton1Click:Connect(ToggleVis)
 
-MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 200, 0, 200)
-MainFrame.Position = UDim2.new(0.5, -100, 0.2, 0)
-MainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-MainFrame.Parent = ScreenGui
-MainFrame.Visible = IsVisible
-
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "Multi-Point Spam TP"
-TitleLabel.Font = Enum.Font.SourceSansBold
-TitleLabel.TextSize = 16
-TitleLabel.Size = UDim2.new(1, 0, 0, 25)
-TitleLabel.TextColor3 = Color3.new(1, 1, 1)
-TitleLabel.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-TitleLabel.Parent = MainFrame
-MakeDraggable(MainFrame, TitleLabel)
-
-local ContentFrame = Instance.new("Frame")
-ContentFrame.Size = UDim2.new(1, 0, 1, -25)
-ContentFrame.Position = UDim2.new(0, 0, 0, 25)
-ContentFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-ContentFrame.BorderSizePixel = 0
-ContentFrame.Parent = MainFrame
-
-local DelayLabel = Instance.new("TextLabel")
-DelayLabel.Text = "Interval (Sec):"
-DelayLabel.Font = Enum.Font.SourceSans
-DelayLabel.TextSize = 14
-DelayLabel.Size = UDim2.new(0.5, 0, 0, 20)
-DelayLabel.Position = UDim2.new(0, 0, 0, 5)
-DelayLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-DelayLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-DelayLabel.TextXAlignment = Enum.TextXAlignment.Left
-DelayLabel.Parent = ContentFrame
-
-DelayBox = Instance.new("TextBox")
-DelayBox.Text = tostring(SPAM_INTERVAL)
-DelayBox.Font = Enum.Font.SourceSans
-DelayBox.TextSize = 14
-DelayBox.Size = UDim2.new(0.5, 0, 0, 20)
-DelayBox.Position = UDim2.new(0.5, 0, 0, 5)
-DelayBox.PlaceholderText = "e.g., 0.01"
-DelayBox.TextColor3 = Color3.new(1, 1, 1)
-DelayBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-DelayBox.Parent = ContentFrame
-
-ToggleButton = Instance.new("TextButton")
-ToggleButton.Name = "Spam_Toggle"
-ToggleButton.Size = UDim2.new(1, 0, 0, 35)
-ToggleButton.Position = UDim2.new(0, 0, 0, 30)
-ToggleButton.Font = Enum.Font.SourceSansBold
-ToggleButton.TextSize = 16
-ToggleButton.Parent = ContentFrame
-ToggleButton.MouseButton1Click:Connect(ToggleSpam)
-
-local AddButton = Instance.new("TextButton")
-AddButton.Text = "Add Position"
-AddButton.Size = UDim2.new(1, 0, 0, 35)
-AddButton.Position = UDim2.new(0, 0, 0, 65)
-AddButton.BackgroundColor3 = Color3.new(0.1, 0.5, 0.9)
-AddButton.TextColor3 = Color3.new(1, 1, 1)
-AddButton.Font = Enum.Font.SourceSans
-AddButton.TextSize = 14
-AddButton.Parent = ContentFrame
-AddButton.MouseButton1Click:Connect(AddDest)
-
-local ClearButton = Instance.new("TextButton")
-ClearButton.Text = "Clear All Destinations"
-ClearButton.Size = UDim2.new(1, 0, 0, 35)
-ClearButton.Position = UDim2.new(0, 0, 0, 100)
-ClearButton.BackgroundColor3 = Color3.new(0.7, 0.3, 0.1)
-ClearButton.TextColor3 = Color3.new(1, 1, 1)
-ClearButton.Font = Enum.Font.SourceSans
-ClearButton.TextSize = 14
-ClearButton.Parent = ContentFrame
-ClearButton.MouseButton1Click:Connect(ClearDest)
-
-CoordStatusLabel = Instance.new("TextLabel")
-CoordStatusLabel.Text = "0 Destinations Saved"
-CoordStatusLabel.Font = Enum.Font.SourceSans
-CoordStatusLabel.TextSize = 12
-CoordStatusLabel.Size = UDim2.new(1, 0, 0, 20)
-CoordStatusLabel.Position = UDim2.new(0, 0, 0, 135)
-CoordStatusLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-CoordStatusLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-CoordStatusLabel.Parent = ContentFrame
-
-UpdateButtonText()
-print("Compressed Multi-Destination Script Loaded!")
+-- TOP-RIGHT FIX 2: Main Draggable Frame
+MainFrame
