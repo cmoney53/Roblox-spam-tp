@@ -1,28 +1,45 @@
--- Global variables to control the spam loop (if not already added)
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
 local isSpammingTP = false
 local spamTPConnection = nil
+local player = Players.LocalPlayer
 
---- The main logic for the rapid teleport
+-- Create the button frame
+local TPButton = Instance.new("TextButton")
+TPButton.Name = "RapidTP_Toggle"
+TPButton.Parent = CoreGui
+TPButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+TPButton.BorderColor3 = Color3.fromRGB(0, 0, 0)
+TPButton.Size = UDim2.new(0, 150, 0, 30)
+TPButton.Position = UDim2.new(0.01, 0, 0.25, 0) -- Adjust position as needed
+TPButton.Font = Enum.Font.SourceSansBold
+TPButton.FontSize = Enum.FontSize.Size18
+TPButton.Text = "TP SPAM [OFF]"
+TPButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+TPButton.ZIndex = 99
+
+-- Logic function to start/stop the teleport
 local function ToggleRapidTP()
-    local char = Players.LocalPlayer.Character
+    local char = player.Character
     local root = char and char:FindFirstChild('HumanoidRootPart')
 
     if not root then
-        notify('SpamTP', 'Character or HumanoidRootPart not found.')
+        TPButton.Text = "TP SPAM [ERROR: No Root]"
         return
     end
 
     if isSpammingTP then
-        -- Stop the teleport
+        -- STOP
         isSpammingTP = false
         if spamTPConnection then
             spamTPConnection:Disconnect()
             spamTPConnection = nil
         end
-        notify('SpamTP', 'Rapid Teleport Stopped.', 'Stop')
+        TPButton.Text = "TP SPAM [OFF]"
     else
-        -- Start the teleport
+        -- START
         isSpammingTP = true
         local originalCFrame = root.CFrame
 
@@ -37,39 +54,33 @@ local function ToggleRapidTP()
                 isSpammingTP = false
             end
         end)
-        notify('SpamTP', 'Rapid Teleport Started.', 'Play')
-    end
-    -- Update the button text to reflect the state
-    if SpamTPButton then
-        SpamTPButton.Text = isSpammingTP and 'STOP TP SPAM' or 'TP SPAM'
+        TPButton.Text = "TP SPAM [ON]"
     end
 end
 
--- 1. Register the command so it can be used via the command bar (/spamtp)
-addcmd('spamtp', {'rapidtp'}, function(args, speaker)
-    ToggleRapidTP()
-end)
+-- Connect the function to the button click
+TPButton.MouseButton1Click:Connect(ToggleRapidTP)
 
--- 2. Register the command to stop it via the command bar (/unspamtp)
-addcmd('unspamtp', {'stopspamtp', 'nospamtp'}, function(args, speaker)
-    if isSpammingTP then
-        ToggleRapidTP()
-    else
-        notify('SpamTP', 'Rapid teleport is not active.')
+-- Optional: Make the button dragable
+local dragging
+local dragStart
+
+TPButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
 end)
 
--- 3. Create the GUI button (This requires the script's 'addbutton' function)
-local SpamTPButton
-SpamTPButton = addbutton('TP SPAM', 'Spams your position very fast (Toggle)', function()
-    ToggleRapidTP()
+TPButton.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        TPButton:TweenPosition(UDim2.new(TPButton.Position.X.Scale, TPButton.Position.X.Offset + delta.X, TPButton.Position.Y.Scale, TPButton.Position.Y.Offset + delta.Y), "Out", "Quad", 0.05, true)
+        dragStart = input.Position
+    end
 end)
-
--- Ensure the button text updates if the command is run via the bar
-if SpamTPButton then
-    task.spawn(function()
-        while wait(0.1) do
-            SpamTPButton.Text = isSpammingTP and 'STOP TP SPAM' or 'TP SPAM'
-        end
-    end)
-end
