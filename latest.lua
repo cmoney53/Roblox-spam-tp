@@ -1,5 +1,5 @@
 -- =========================================================
---             EXTREME COMPATIBILITY GUI FIX
+--             MULTI-DESTINATION SPAM TELEPORTER (FINAL)
 -- =========================================================
 
 -- 1. Setup Global References
@@ -9,19 +9,18 @@ local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 
 -- 2. Configuration Variables
-local TELEPORT_DESTINATIONS = {}
-local SPAM_INTERVAL = 0.05
+local TELEPORT_DESTINATIONS = {} -- List to hold multiple Vector3 points
+local SPAM_INTERVAL = 0.05       -- Default time between teleports (in seconds)
 
 -- 3. State and Thread Management
-local IsActive = false
-local LoopThread = nil
-local IsMinimized = false
+local IsActive = false           -- Global toggle for the spam loop
+local LoopThread = nil           -- Reference to the running spam loop
+local IsVisible = true           -- New state variable for the main GUI visibility (starts visible)
 
 -- Helper function to reliably get the character's root part
 local function getRootPart()
     local character = LocalPlayer.Character
     if not character then
-        -- Wait for character to load if it hasn't (more robust)
         character = LocalPlayer.CharacterAdded:Wait()
     end
     return character and character:FindFirstChild("HumanoidRootPart")
@@ -38,10 +37,7 @@ local function StartTeleportSpam()
             while IsActive do
                 local HumanoidRootPart = getRootPart()
                 
-                if not HumanoidRootPart then 
-                    task.wait(0.5)
-                    goto continue_loop
-                end
+                if not HumanoidRootPart then task.wait(0.5); goto continue_loop end
                 if #TELEPORT_DESTINATIONS == 0 then
                     warn("No destinations saved. Stopping spam.")
                     IsActive = false
@@ -53,9 +49,7 @@ local function StartTeleportSpam()
                     HumanoidRootPart.CFrame = CFrame.new(TELEPORT_DESTINATIONS[currentIndex])
                 end)
 
-                if not success then
-                    warn("Teleport failed: " .. tostring(err))
-                end
+                if not success then warn("Teleport failed: " .. tostring(err)) end
 
                 currentIndex = currentIndex + 1
                 if currentIndex > #TELEPORT_DESTINATIONS then
@@ -70,7 +64,7 @@ local function StartTeleportSpam()
     end
 end
 
--- 5. Add/Clear Destination Functions (omitted for brevity, assume working)
+-- 5. Add Destination Function
 local function AddDestination()
     local HumanoidRootPart = getRootPart()
     if HumanoidRootPart then
@@ -89,6 +83,7 @@ local function AddDestination()
     end
 end
 
+-- 6. Clear Destinations Function
 local function ClearDestinations()
     TELEPORT_DESTINATIONS = {} 
     if IsActive then 
@@ -100,8 +95,8 @@ local function ClearDestinations()
     print("Cleared all teleport destinations.")
 end
 
--- 7. GUI Management and Draggable/Collapsible Logic (omitted for brevity, assume working)
-local ToggleButton, DelayBox, CoordStatusLabel, MainFrame, TitleLabel, MinMaxButton = nil
+-- 7. GUI Management and Draggable/Show/Hide Logic
+local ToggleButton, DelayBox, CoordStatusLabel, MainFrame, TitleLabel, VisibilityToggle = nil
 local ContentFrame = nil
 
 local function UpdateButtonText()
@@ -128,19 +123,19 @@ local function ToggleSpam()
     UpdateButtonText()
 }
 
-local function ToggleMinimize()
-    IsMinimized = not IsMinimized
+-- NEW: Show/Hide Toggle Function
+local function ToggleVisibility()
+    IsVisible = not IsVisible
     
-    if IsMinimized then
-        MainFrame:TweenSize(UDim2.new(0, 250, 0, 25), "Out", "Quad", 0.2, true)
-        ContentFrame.Visible = false
-        MinMaxButton.Text = "+"
-    else
-        MainFrame:TweenSize(UDim2.new(0, 250, 0, 195), "Out", "Quad", 0.2, true)
-        ContentFrame.Visible = true
-        MinMaxButton.Text = "-"
+    if MainFrame then
+        MainFrame.Visible = IsVisible
     end
-}
+    
+    if VisibilityToggle then
+        VisibilityToggle.Text = IsVisible and "HIDE" or "SHOW"
+        VisibilityToggle.BackgroundColor3 = IsVisible and Color3.new(0.1, 0.1, 0.1) or Color3.new(0.8, 0.8, 0.8)
+    end
+end
 
 local function MakeDraggable(frame, handle)
     local dragging, dragInput, dragStart, startPos
@@ -166,32 +161,38 @@ local function MakeDraggable(frame, handle)
     RunService.Heartbeat:Connect(function()
         if dragging and dragInput then DoDrag(dragInput) end
     end)
-end
----
-## 8. GUI Construction (Extreme Compatibility Fix)
+}
 
--- 🌟 FIX 1: Ensure the game is loaded before trying to create the GUI
+-- 8. GUI Construction
 game.Loaded:Wait()
 print("Game loaded. Attempting to create GUI.")
 
+-- Create the master ScreenGui first (outside the pcall for the Show/Hide button)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MultiSpamTP_GUI"
+ScreenGui.Parent = CoreGui -- Parent to CoreGui for stability
+
+-- Create the separate Visibility Toggle Button (always visible, outside the main frame)
+VisibilityToggle = Instance.new("TextButton")
+VisibilityToggle.Text = "HIDE" -- Starts visible
+VisibilityToggle.Font = Enum.Font.SourceSansBold
+VisibilityToggle.TextSize = 14
+VisibilityToggle.Size = UDim2.new(0, 50, 0, 20)
+VisibilityToggle.Position = UDim2.new(0.01, 0, 0.01, 0) -- Top left corner
+VisibilityToggle.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+VisibilityToggle.TextColor3 = Color3.new(1, 1, 1)
+VisibilityToggle.Parent = ScreenGui
+VisibilityToggle.MouseButton1Click:Connect(ToggleVisibility)
+
+-- Now create the main draggable frame inside a pcall
 local guiSuccess, guiResult = pcall(function()
-    
-    -- We can try parenting to PlayerGui if CoreGui fails (depends on executor)
-    local targetGui = CoreGui
-    if not targetGui then 
-        warn("CoreGui not found. Falling back to PlayerGui.")
-        targetGui = LocalPlayer:WaitForChild("PlayerGui")
-    end
-    
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "MultiSpamTP_GUI"
-    ScreenGui.Parent = targetGui -- FIX 2: Use the determined target
 
     MainFrame = Instance.new("Frame")
     MainFrame.Size = UDim2.new(0, 250, 0, 195)
     MainFrame.Position = UDim2.new(0.5, -125, 0.1, 0)
     MainFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
     MainFrame.Parent = ScreenGui
+    MainFrame.Visible = IsVisible -- Set initial visibility
 
     TitleLabel = Instance.new("TextLabel")
     TitleLabel.Text = "Multi-Point Spam TP"
@@ -203,17 +204,7 @@ local guiSuccess, guiResult = pcall(function()
     TitleLabel.Parent = MainFrame
     MakeDraggable(MainFrame, TitleLabel)
 
-    MinMaxButton = Instance.new("TextButton")
-    MinMaxButton.Text = "-"
-    MinMaxButton.Font = Enum.Font.SourceSansBold
-    MinMaxButton.TextSize = 18
-    MinMaxButton.Size = UDim2.new(0, 25, 0, 25)
-    MinMaxButton.Position = UDim2.new(1, -25, 0, 0)
-    MinMaxButton.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
-    MinMaxButton.TextColor3 = Color3.new(1, 1, 1)
-    MinMaxButton.Parent = TitleLabel
-    MinMaxButton.MouseButton1Click:Connect(ToggleMinimize)
-
+    -- Content Frame (The body of the GUI)
     ContentFrame = Instance.new("Frame")
     ContentFrame.Size = UDim2.new(1, 0, 1, -25)
     ContentFrame.Position = UDim2.new(0, 0, 0, 25)
@@ -221,7 +212,7 @@ local guiSuccess, guiResult = pcall(function()
     ContentFrame.BorderSizePixel = 0
     ContentFrame.Parent = MainFrame
 
-    -- Delay Label
+    -- UI Elements within ContentFrame (Same as before)
     local DelayLabel = Instance.new("TextLabel")
     DelayLabel.Text = "Spam Interval (Sec):"
     DelayLabel.Font = Enum.Font.SourceSans
@@ -233,7 +224,6 @@ local guiSuccess, guiResult = pcall(function()
     DelayLabel.TextXAlignment = Enum.TextXAlignment.Left
     DelayLabel.Parent = ContentFrame
 
-    -- Delay Box
     DelayBox = Instance.new("TextBox")
     DelayBox.Text = tostring(SPAM_INTERVAL)
     DelayBox.Font = Enum.Font.SourceSans
@@ -245,7 +235,6 @@ local guiSuccess, guiResult = pcall(function()
     DelayBox.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
     DelayBox.Parent = ContentFrame
 
-    -- Toggle Button
     ToggleButton = Instance.new("TextButton")
     ToggleButton.Name = "Spam_Toggle"
     ToggleButton.Size = UDim2.new(1, 0, 0, 35)
@@ -255,7 +244,6 @@ local guiSuccess, guiResult = pcall(function()
     ToggleButton.Parent = ContentFrame
     ToggleButton.MouseButton1Click:Connect(ToggleSpam)
 
-    -- Add Button
     local AddButton = Instance.new("TextButton")
     AddButton.Text = "Add Current Position (I'm here)"
     AddButton.Size = UDim2.new(1, 0, 0, 35)
@@ -267,7 +255,6 @@ local guiSuccess, guiResult = pcall(function()
     AddButton.Parent = ContentFrame
     AddButton.MouseButton1Click:Connect(AddDestination)
 
-    -- Clear Button
     local ClearButton = Instance.new("TextButton")
     ClearButton.Text = "Clear All Destinations"
     ClearButton.Size = UDim2.new(1, 0, 0, 35)
@@ -279,7 +266,6 @@ local guiSuccess, guiResult = pcall(function()
     ClearButton.Parent = ContentFrame
     ClearButton.MouseButton1Click:Connect(ClearDestinations)
 
-    -- Coordinate Status Label
     CoordStatusLabel = Instance.new("TextLabel")
     CoordStatusLabel.Text = "0 Destinations Saved"
     CoordStatusLabel.Font = Enum.Font.SourceSans
