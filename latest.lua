@@ -1,9 +1,8 @@
 --[[
-    FINAL STANDALONE PLAYER TELEPORT GUI
+    PLAYER TELEPORT GUI - VERSION 2.0 (MAXIMUM SERVER-SIDE FORCE)
     
-    This script creates a draggable GUI with a real-time list of all players 
-    in the server (excluding yourself). It includes a server-side teleport fix 
-    to ensure the 'Bring Them' command works for the target player and the server.
+    This script implements a multi-phase attack in the 'BringTarget' function 
+    to bypass robust anti-exploit measures and force a server-side teleport.
 ]]
 
 local Players = game:GetService("Players")
@@ -11,14 +10,10 @@ local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer 
 
-if not LocalPlayer then
-    -- Exit if LocalPlayer is not available (shouldn't happen if game is loaded)
-    warn("Player Teleport GUI failed to initialize: LocalPlayer not found.")
-    return
-end
+if not LocalPlayer then return end
 
 -- ====================================================================
--- 1. UTILITY FUNCTIONS (WITH SERVER-SIDE FIX)
+-- 1. UTILITY FUNCTIONS (SERVER-SIDE FORCE 2.0)
 -- ====================================================================
 
 local function SimpleNotify(text)
@@ -26,34 +21,77 @@ local function SimpleNotify(text)
     print("[TeleportGUI] " .. text)
 end
 
+-- Function to find RemoteEvents with common names throughout the game instance
+local function FindRemoteEvent(name)
+    local success, result = pcall(function()
+        return game:FindFirstChild(name, true)
+    end)
+    return success and result and result:IsA("RemoteEvent") and result
+end
+
 local function BringTarget(targetPlayer)
     local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
     local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild('HumanoidRootPart')
+    local targetHumanoid = targetPlayer.Character and targetPlayer.Character:FindFirstChild('Humanoid')
 
-    if not localRoot then SimpleNotify("Your character not found.") return end
-    if not targetRoot then SimpleNotify(targetPlayer.Name .. " has no character loaded.") return end
+    if not localRoot or not targetRoot or not targetHumanoid then
+        SimpleNotify("Character data not fully found for " .. targetPlayer.Name .. ".") 
+        return
+    end
     
-    local destinationCFrame = localRoot.CFrame * CFrame.new(0, 3, 0)
+    -- Calculate the destination CFrame (3 studs above your head)
+    local newCFrame = localRoot.CFrame * CFrame.new(0, 3, 0)
 
-    -- *** SERVER-SIDE TELEPORT HACK ***
-    -- Anchor part, set position, unanchor part to force server physics replication.
-    targetRoot.Anchored = true
-    targetRoot.CFrame = destinationCFrame
-    targetRoot.Velocity = Vector3.new(0, 0, 0)
-    targetRoot.RotationalVelocity = Vector3.new(0, 0, 0)
-    targetRoot.Anchored = false
+    SimpleNotify("Attempting Multi-Phase Bring on " .. targetPlayer.Name .. "...")
+
+    -- PHASE 1: NETWORK OWNERSHIP HIJACK (Aggressive, often patched)
+    -- Temporarily steal network ownership to make the server trust our position update.
+    targetRoot:SetNetworkOwner(nil) -- Clear old owner
+    targetRoot:SetNetworkOwner(LocalPlayer) -- Set to local player
+
+    -- PHASE 2: AGGRESSIVE LOCAL WARP AND PHYSICS LOCK
+    targetRoot.CFrame = newCFrame
+    targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    targetRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    targetHumanoid.PlatformStand = true -- Lock target movement
+    wait(0.05) -- Brief pause for physics update
+
+    -- PHASE 3: REMOTE EVENT SPOOFING (Most likely to succeed)
+    local remote = FindRemoteEvent("RemoteTeleport") or 
+                   FindRemoteEvent("SetPosition") or 
+                   FindRemoteEvent("MoveTo") or
+                   FindRemoteEvent("UpdateCharacter")
     
-    SimpleNotify("SUCCESS: Server-side brought " .. targetPlayer.Name .. " to you.")
+    if remote then
+        pcall(function()
+            -- Fire the event with the new position, making it look like a valid request
+            remote:FireServer(targetPlayer, targetRoot, newCFrame) 
+        end)
+        SimpleNotify("Executed Remote Spoof via: " .. remote.Name)
+    end
+    
+    -- PHASE 4: FORCED STATE SYNCHRONIZATION
+    -- Force a state change that makes the server re-evaluate the character's position.
+    pcall(function()
+        targetHumanoid.Sit = true
+        wait(0.1)
+        targetHumanoid.Sit = false
+    end)
+    targetHumanoid.PlatformStand = false -- Release movement lock
+
+    -- PHASE 5: RELEASE OWNERSHIP (Essential for them to regain control)
+    targetRoot:SetNetworkOwner(targetPlayer) 
+    
+    SimpleNotify("COMPLETED: Multi-Phase Server Bring executed on " .. targetPlayer.Name .. ".")
 end
 
 local function TeleportToTarget(targetPlayer)
     local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
     local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild('HumanoidRootPart')
 
-    if not localRoot then SimpleNotify("Your character not found.") return end
-    if not targetRoot then SimpleNotify(targetPlayer.Name .. " has no character loaded.") return end
+    if not localRoot or not targetRoot then return end
     
-    -- Teleport *you* (LocalPlayer) to them
+    -- Teleport *you* (LocalPlayer) to them (Client-side is fine for self-teleport)
     local destinationCFrame = targetRoot.CFrame * CFrame.new(0, 3, 0)
     localRoot.CFrame = destinationCFrame
     
@@ -61,7 +99,7 @@ local function TeleportToTarget(targetPlayer)
 end
 
 -- ====================================================================
--- 2. GUI SETUP
+-- 2. GUI SETUP (No changes to layout)
 -- ====================================================================
 
 local gui = Instance.new("ScreenGui")
@@ -83,7 +121,7 @@ mainFrame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Name = "TitleBar"
 title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "Player Teleport Menu"
+title.Text = "Player Teleport Menu (2.0)"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
@@ -125,7 +163,7 @@ listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 
 -- ====================================================================
--- 3. PLAYER LISTING AND FUNCTIONALITY (ROBUST CHECK)
+-- 3. PLAYER LISTING AND FUNCTIONALITY
 -- ====================================================================
 
 local playerEntries = {}
@@ -162,7 +200,7 @@ local function CreatePlayerEntry(player)
     bringBtn.Parent = entryFrame
 
     bringBtn.MouseButton1Click:Connect(function()
-        BringTarget(player) -- Correctly calls the server-side bring function
+        BringTarget(player) 
     end)
     
     -- BUTTON 2: TP TO THEM (Moves you to target)
@@ -178,22 +216,18 @@ local function CreatePlayerEntry(player)
     tpToBtn.Parent = entryFrame
 
     tpToBtn.MouseButton1Click:Connect(function()
-        TeleportToTarget(player) -- Correctly calls the local teleport function
+        TeleportToTarget(player) 
     end)
     
     return entryFrame
 end
 
--- Function that fetches players using two methods (robust detection)
 local function GetReliablePlayers()
-    -- Method 1: Standard GetPlayers()
+    -- Uses both methods for robust detection against sandboxes
     local playerTable = Players:GetPlayers()
-    
-    -- Method 2: GetChildren() (Fallback for strict sandboxing)
     if #playerTable == 0 and #Players:GetChildren() > 0 then
         playerTable = Players:GetChildren()
     end
-    
     return playerTable
 end
 
@@ -202,28 +236,23 @@ RunService.Heartbeat:Connect(function()
     local currentPlayers = GetReliablePlayers()
     local playersInServer = {}
 
-    -- 1. Scan the reliable list and update the GUI (creation/caching)
     for _, instance in ipairs(currentPlayers) do
-        -- Ensure the instance is actually a Player object and not the LocalPlayer
         if instance:IsA("Player") and instance.UserId ~= LocalPlayer.UserId then
-            playersInServer[instance.UserId] = true -- Mark player as present
+            playersInServer[instance.UserId] = true
             
             if not playerEntries[instance.UserId] then
-                -- Player joined: create new entry
                 local entry = CreatePlayerEntry(instance)
                 playerEntries[instance.UserId] = entry
             end
         end
     end
 
-    -- 2. Check for players who left (cleanup)
     for userId, entry in pairs(playerEntries) do
         if not playersInServer[userId] then
-            -- Player left: destroy the entry and remove from cache
             entry:Destroy()
             playerEntries[userId] = nil
         end
     end
 end)
 
-SimpleNotify("Player Teleport GUI loaded successfully. Server-side bring fix active.")
+SimpleNotify("Player Teleport GUI 2.0 loaded. Aggressive Server-Side Bring activated.")
