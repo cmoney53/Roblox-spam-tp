@@ -2,12 +2,10 @@
     UNIVERSAL REMOTE COMMANDER: The final, flexible tool.
     
     Left Panel: Universal Code Harvester
-    - Scans the entire game for callable RemoteEvents/Functions.
+    - Scans the entire game for callable RemoteEvents/Functions and stores a direct reference to the object.
     
     Right Panel: Remote Commander
-    - Allows you to select a remote from the left and manually set the arguments (parameters) to fire the command.
-    
-    This is the most direct way to execute any command found in the game's code.
+    - Uses the stored object reference to fire the remote, avoiding path lookup errors.
 ]]
 
 local Game = game
@@ -30,6 +28,7 @@ local SERVICES_TO_SCAN = {
     Game
 }
 local foundRemotes = {}
+local selectedRemoteObject = nil -- New global to store the actual object reference
 
 -- Utility to log to the console
 local function Log(text)
@@ -65,7 +64,8 @@ local function DeepSearchForRemotes(instance, path)
                 Path = instancePath, 
                 Type = instance.ClassName,
                 Categories = categories,
-                ID = HttpService:GenerateGUID(false)
+                -- *** CRITICAL CHANGE: Store the actual Instance Object ***
+                Instance = instance 
             })
         end
     end
@@ -88,7 +88,6 @@ end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "UniversalCommander"
--- Fallback parenting for stability
 screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
@@ -261,8 +260,11 @@ local function CreateRemoteButton(remoteData)
 
     -- On Click, populate the executor panel
     btn.MouseButton1Click:Connect(function()
-        pathBox.Text = remoteData.Path
+        -- Store the direct object reference and update the GUI
+        selectedRemoteObject = remoteData.Instance
+        pathBox.Text = remoteData.Path -- Only showing the path string
         pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        
         execOutput.Text = string.format("Command Selected: %s (%s)\nPath: %s\n\nEnter the arguments required by the remote and click EXECUTE.", 
             remoteData.Name, 
             remoteData.Type, 
@@ -301,6 +303,7 @@ end
 
 local function RunRemoteScan()
     table.clear(foundRemotes)
+    selectedRemoteObject = nil -- Clear the selected object
     Log("Starting ULTIMATE CODE HARVEST...")
     
     harvestButton.Text = "HARVESTING..."
@@ -330,32 +333,7 @@ end)
 -- EXECUTOR LOGIC (RIGHT PANEL)
 -- ====================================================================
 
-local function FindInstanceByPath(path)
-    -- *** CRITICAL FIX: Use GetService for robustness ***
-    local parts = string.split(path, ".")
-    
-    if #parts < 2 or string.lower(parts[1]) ~= "game" then
-        return nil -- Invalid path format
-    end
-
-    local serviceName = parts[2]
-    local current = Game:GetService(serviceName) -- Robustly get the top-level service
-
-    if not current then
-        -- This error means the service itself (e.g., ReplicatedStorage) was not found
-        return nil 
-    end
-
-    -- Now iterate from the 3rd part onwards (the children inside the service)
-    for i = 3, #parts do 
-        if not current then 
-            return nil -- Path broken mid-way
-        end
-        current = current:FindFirstChild(parts[i])
-    end
-    
-    return current
-end
+-- FindInstanceByPath is no longer needed, we use selectedRemoteObject directly!
 
 local function ParseArguments(argString)
     local args = {}
@@ -395,19 +373,13 @@ local function ParseArguments(argString)
 end
 
 execButton.MouseButton1Click:Connect(function()
-    local path = pathBox.Text
+    local path = pathBox.Text -- Just for display purposes
     local argString = argsBox.Text
     
-    if path == "" or path == pathBox.PlaceholderText then
-        execOutput.Text = "Error: Please select a command on the left first."
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-    
-    local Remote = FindInstanceByPath(path)
-    
-    if not Remote or (not IsCallableObject(Remote)) then
-        execOutput.Text = string.format("Execution Error: Path '%s' does not lead to a valid Remote/Bindable object. The path is broken.", path)
+    local Remote = selectedRemoteObject -- Use the globally stored object reference
+
+    if not Remote or not IsCallableObject(Remote) then
+        execOutput.Text = "Execution Error: No valid command selected. Please click an item in the Harvester list first."
         execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
