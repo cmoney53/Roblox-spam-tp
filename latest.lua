@@ -57,7 +57,7 @@ local function DeepSearchForRemotes(instance, path)
             if string.find(lowerName, keyword) then
                 table.insert(categories, keyword)
             end
-        }
+        end
 
         if #categories > 0 then
             table.insert(foundRemotes, {
@@ -88,6 +88,7 @@ end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "UniversalCommander"
+-- ** CRITICAL FIX: Use PlayerGui as a fallback for executors that block CoreGui **
 screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
@@ -185,7 +186,7 @@ pathBox.TextSize = 14
 pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 pathBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
 pathBox.Parent = execPanel
-pathBox.TextEditable = false -- Path is read-only after selection
+pathBox.TextEditable = false 
 
 -- Arguments Box
 local argsLabel = pathLabel:Clone()
@@ -269,7 +270,7 @@ local function CreateRemoteButton(remoteData)
         )
         execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
         -- Set a common initial argument as a hint
-        argsBox.Text = (remoteData.Type == "RemoteEvent" or remoteData.Type == "RemoteFunction") and "nil, TargetPlayerName" or ""
+        argsBox.Text = (remoteData.Type == "RemoteEvent" or remoteData.Type == "RemoteFunction") and "TargetPlayerName" or ""
     end)
     
     return btn
@@ -356,14 +357,6 @@ local function ParseArguments(argString)
             table.insert(args, true) -- Is boolean true
         elseif part == "false" then
             table.insert(args, false) -- Is boolean false
-        elseif string.match(part, "TargetPlayerName") then -- Placeholder for target
-            local targetPlayer = Players:FindFirstChild(string.gsub(part, "TargetPlayerName", argsBox.Text))
-            if targetPlayer then
-                table.insert(args, targetPlayer)
-            else
-                -- If it fails to find the player, pass the string
-                table.insert(args, part)
-            end
         elseif part == "LocalPlayer" then
             table.insert(args, LocalPlayer) -- Pass the local player instance
         elseif string.match(part, "^[A-Za-z_]+$") then
