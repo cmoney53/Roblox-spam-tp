@@ -88,7 +88,7 @@ end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "UniversalCommander"
--- ** CRITICAL FIX: Use PlayerGui as a fallback for executors that block CoreGui **
+-- Fallback parenting for stability
 screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
@@ -331,12 +331,29 @@ end)
 -- ====================================================================
 
 local function FindInstanceByPath(path)
+    -- *** CRITICAL FIX: Use GetService for robustness ***
     local parts = string.split(path, ".")
-    local current = Game
-    for i = 2, #parts do 
-        if not current then return nil end
+    
+    if #parts < 2 or string.lower(parts[1]) ~= "game" then
+        return nil -- Invalid path format
+    end
+
+    local serviceName = parts[2]
+    local current = Game:GetService(serviceName) -- Robustly get the top-level service
+
+    if not current then
+        -- This error means the service itself (e.g., ReplicatedStorage) was not found
+        return nil 
+    end
+
+    -- Now iterate from the 3rd part onwards (the children inside the service)
+    for i = 3, #parts do 
+        if not current then 
+            return nil -- Path broken mid-way
+        end
         current = current:FindFirstChild(parts[i])
     end
+    
     return current
 end
 
@@ -388,8 +405,9 @@ execButton.MouseButton1Click:Connect(function()
     end
     
     local Remote = FindInstanceByPath(path)
+    
     if not Remote or (not IsCallableObject(Remote)) then
-        execOutput.Text = "Error: Path does not lead to a valid Remote/Bindable object."
+        execOutput.Text = string.format("Execution Error: Path '%s' does not lead to a valid Remote/Bindable object. The path is broken.", path)
         execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
