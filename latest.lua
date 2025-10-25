@@ -1,8 +1,10 @@
 --[[
-    PLAYER TELEPORT GUI - VERSION 3.0 (ULTRA-AGGRESSIVE CHARACTER SWAP)
+    PLAYER TELEPORT GUI - VERSION 4.0 (ULTIMATE NETWORK SPAM & OWNERSHIP HIJACK)
     
-    This version implements the "Character Swap" technique inside BringTarget 
-    to temporarily take control of the target's physics and force a server-accepted teleport.
+    This version implements the highest-frequency, most aggressive combination 
+    of Network Ownership takeover and CFrame spam to bypass the server's sanity checks.
+    If this fails, the game is using custom, patched RemoteEvents or a custom
+    anti-exploit physics handler that requires a game-specific exploit.
 ]]
 
 local Players = game:GetService("Players")
@@ -14,10 +16,11 @@ local Workspace = game:GetService("Workspace")
 if not LocalPlayer then return end
 
 -- ====================================================================
--- 1. UTILITY FUNCTIONS (SERVER-SIDE FORCE 3.0)
+-- 1. UTILITY FUNCTIONS (SERVER-SIDE FORCE 4.0)
 -- ====================================================================
 
 local function SimpleNotify(text)
+    -- Prints a message to the executor console
     print("[TeleportGUI] " .. text)
 end
 
@@ -26,39 +29,46 @@ local function BringTarget(targetPlayer)
     local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
     local targetCharacter = targetPlayer.Character
     local targetRoot = targetCharacter and targetCharacter:FindFirstChild('HumanoidRootPart')
+    local targetHumanoid = targetCharacter and targetCharacter:FindFirstChild('Humanoid')
 
-    if not localRoot or not targetCharacter or not targetRoot then
+    if not localRoot or not targetCharacter or not targetRoot or not targetHumanoid then
         SimpleNotify("Character data not fully found for " .. targetPlayer.Name .. ".") 
         return
     end
     
-    local newCFrame = localRoot.CFrame * CFrame.new(0, 3, 0)
-    SimpleNotify("Attempting Character Swap Bring on " .. targetPlayer.Name .. "...")
+    -- Teleport target 5 studs above your head for clearance
+    local newCFrame = localRoot.CFrame * CFrame.new(0, 5, 0) 
+    SimpleNotify("Attempting Ultra-Aggressive Bring on " .. targetPlayer.Name .. "...")
 
-    -- PHASE 1: PREPARE AND LOCK PHYSICS
+    -- STEP 1: PREPARE AND LOCK PHYSICS
     targetRoot:SetNetworkOwner(nil) -- Clear old owner
-    
-    -- PHASE 2: CHARACTER SWAP/HIJACK
-    pcall(function()
-        -- 2a. Temporarily set the target's parent to an object on our client (Backpack)
-        -- This forces our client to temporarily gain full physics ownership.
-        targetCharacter.Parent = LocalPlayer.Backpack 
-        
-        -- 2b. Aggressively set the CFrame while on our client
+
+    -- STEP 2: NETWORK OWNERSHIP HIJACK & CFRAME SPAM
+    -- Spam the CFrame update while setting network ownership to the local player 10 times
+    for i = 1, 10 do
+        targetRoot:SetNetworkOwner(LocalPlayer) -- Steal ownership
         targetRoot.CFrame = newCFrame
+        -- Attempt to force a client-side network update
         targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         targetRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        wait(0.01)
-        
-        -- 2c. Move the character back to the workspace
-        targetCharacter.Parent = Workspace 
+        RunService.Heartbeat:Wait() -- Wait one frame for high-speed spam
+    end
+    
+    -- STEP 3: FORCED STATE SYNCHRONIZATION
+    pcall(function()
+        -- Use Humanoid state changes to trigger server-side replication
+        targetHumanoid.PlatformStand = true
+        targetHumanoid.Sit = true
+        wait(0.05)
+        targetHumanoid.Sit = false
+        targetHumanoid.PlatformStand = false
     end)
     
-    -- PHASE 3: FINAL SYNCHRONIZATION AND OWNERSHIP RESTORE
-    targetRoot.CFrame = newCFrame -- Set one last time for good measure
+    -- STEP 4: FINAL CLEANUP AND OWNERSHIP RESTORE
+    targetRoot.CFrame = newCFrame -- Final guaranteed position
     targetRoot:SetNetworkOwner(targetPlayer) -- Restore original owner
     
-    SimpleNotify("COMPLETED: Character Swap executed on " .. targetPlayer.Name .. ". Check the server now.")
+    SimpleNotify("COMPLETED: Ultra-Aggressive Bring executed on " .. targetPlayer.Name .. ".")
 end
 
 local function TeleportToTarget(targetPlayer)
@@ -97,7 +107,7 @@ mainFrame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Name = "TitleBar"
 title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "Player Teleport Menu (3.0)"
+title.Text = "Player Teleport Menu (4.0)"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
@@ -231,5 +241,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-SimpleNotify("Player Teleport GUI 3.0 loaded. Character Swap Attack deployed.")
-
+SimpleNotify("Player Teleport GUI 4.0 loaded. Network Ownership Spam deployed.")
