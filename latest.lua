@@ -1,46 +1,48 @@
 --[[
-    UNIVERSAL SINGLE-CLICK EXECUTOR v13 - CLEAR LIST BUTTON ADDED
+    UNIVERSAL REMOTE EXECUTOR: FINAL EDITION (v14)
     
-    CRITICAL FIX: Added a dedicated 'CLEAR COMMAND LIST' button to instantly 
-    wipe the displayed results list without re-running the harvester.
+    A comprehensive tool combining deep harvesting, one-click execution,
+    real-time filtering, and a dedicated clear button for maximum efficiency.
     
-    1. Includes the working harvest and list display logic.
-    2. Executes the command INSTANTLY upon clicking using ZERO ARGUMENTS ({}).
+    Functionality:
+    1. DEEP HARVEST: Scans all services, including 'game', for callable objects.
+    2. ONE-CLICK EXECUTION: Fires the selected remote with zero arguments ({}) for quick testing.
+    3. CLEAR BUTTON: Instantly removes all buttons from the display.
+    4. FILTER: Searches by command name or full path.
 ]]
 
 local Game = game
 local Players = Game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local HttpService = Game:GetService("HttpService") 
+-- local HttpService = Game:GetService("HttpService") -- Not strictly needed for core functionality
 
 -- Configuration Constants
 local FULL_WIDTH = 450 
-local FULL_HEIGHT = 500 -- Stable height
+local FULL_HEIGHT = 500 
 local MIN_HEIGHT = 30
 local isMinimized = false
-local currentSearchQuery = "" -- Search query state
+local currentSearchQuery = ""
 local instancesScanned = 0
 
 -- UI Layout Constants
 local CONTROL_HEIGHT = 30
 local CONTROL_Y_START = 5
-local RESULTS_LIST_HEIGHT = 330 -- Large list for all commands
+local BUTTON_MARGIN = 5 
+local RESULTS_LIST_HEIGHT = 330 
 local STATUS_OUTPUT_HEIGHT = 65
-local statusOutputYOffset = 0 
 
+-- Keywords for categorization and visual highlighting
 local SUSPICIOUS_KEYWORDS = {
-    "teleport", "tp", "move", "position", "warp", "goto", "cframe", 
-    "admin", "kick", "ban", "kill", "respawn", "damage", "health", 
-    "command", "server", "setprop", "property", "override",
-    "item", "inventory", "stat", "update", "value", "setvalue", 
-    "char", "character", "load", "save", "debug", "test", "dev",
-    "give", "add", "remove", "currency", "level", "xp", "money", "cash", "luck", 
-    "hook", "client", "local", "trigger",
-    "secret", "key", "token", "password", "hidden", "exploit", "cheat" 
+    "teleport", "tp", "move", "position", "warp", "goto", 
+    "admin", "kick", "ban", "kill", "damage", "health", 
+    "command", "server", "setprop", "property", 
+    "item", "inventory", "stat", "update", "value", 
+    "char", "character", "load", "save", "debug", "test", 
+    "give", "add", "remove", "currency", "level", "xp"
 }
--- Service list now includes the 'Game' root for guaranteed full deep scan
+
 local SERVICES_TO_SCAN = {
-    Game
+    Game -- Starting the scan from the game root is critical for full coverage
 }
 local foundRemotes = {}
 
@@ -53,6 +55,7 @@ end
 -- CORE HARVESTER & UTILITY FUNCTIONS 
 -- ====================================================================
 
+-- Formats a return value for display in the status box
 local function FormatArgument(val)
     if type(val) == "string" then
         return string.format("\"%s\"", val)
@@ -60,8 +63,6 @@ local function FormatArgument(val)
         return "nil"
     elseif type(val) == "boolean" then
         return val and "true" or "false"
-    elseif type(val) == "number" then
-        return tostring(val)
     elseif type(val) == "userdata" and tostring(val):find("CFrame") then
         local cframe = val
         return string.format("CFR(%.1f, %.1f, %.1f, ...)", cframe.X, cframe.Y, cframe.Z)
@@ -70,6 +71,7 @@ local function FormatArgument(val)
     end
 end
 
+-- Check if an instance is a Remote or Bindable object
 local function IsCallableObject(instance)
     return instance:IsA("RemoteEvent") or 
            instance:IsA("RemoteFunction") or
@@ -77,9 +79,9 @@ local function IsCallableObject(instance)
            instance:IsA("BindableFunction")
 end
 
--- DeepSearch with robust path tracking and exclusion logic
+-- DeepSearch: Iterates through the game hierarchy recursively
 local function DeepSearchForRemotes(instance, path)
-    if not instance or instance:IsA("MaterialService") or instance:IsA("LocalizationService") then return end
+    if not instance then return end
     
     instancesScanned = instancesScanned + 1
 
@@ -87,8 +89,9 @@ local function DeepSearchForRemotes(instance, path)
 
     if IsCallableObject(instance) then
         local lowerName = string.lower(instance.Name)
-        
         local categories = {}
+        
+        -- Categorize based on keywords
         for _, keyword in ipairs(SUSPICIOUS_KEYWORDS) do
             if string.find(lowerName, keyword) then
                 table.insert(categories, keyword)
@@ -101,7 +104,7 @@ local function DeepSearchForRemotes(instance, path)
 
         table.insert(foundRemotes, {
             Name = instance.Name, 
-            Path = newPath, -- Use the robust path
+            Path = newPath,
             Type = instance.ClassName,
             Categories = categories,
             Instance = instance 
@@ -109,21 +112,21 @@ local function DeepSearchForRemotes(instance, path)
     end
 
     for _, child in ipairs(instance:GetChildren()) do
-        -- Skip scripts (LocalScript, Script, ModuleScript) to keep the list clean and focused on commands
+        -- Skip scripts and configurations for a clean command list
         if not child:IsA("Configuration") and
            not child:IsA("LocalScript") and 
            not child:IsA("Script") and
            not child:IsA("ModuleScript")
         then
-            -- Yield occasionally to avoid crashing the game thread
             if instancesScanned % 100 == 0 then
-                task.wait()
+                task.wait() -- Yield occasionally
             end
             DeepSearchForRemotes(child, newPath)
         end
     end
 end
 
+-- Fire the remote (or invoke the function)
 local function FireRemote(remote, args)
     local success, result
     
@@ -136,8 +139,6 @@ local function FireRemote(remote, args)
             return remote:InvokeServer(unpack(args)) 
         elseif remote:IsA("BindableFunction") then
             return remote:Invoke(unpack(args)) 
-        else
-            error("Invalid Callable object type.")
         end
     end
 
@@ -152,7 +153,7 @@ end
 -- ====================================================================
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UniversalExecutorSimple"
+screenGui.Name = "UniversalExecutor"
 screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
@@ -167,7 +168,7 @@ frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, MIN_HEIGHT) 
-title.Text = "Universal Single-Click Executor v13"
+title.Text = "Universal Remote Executor: Final"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
@@ -194,32 +195,31 @@ mainPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 mainPanel.Parent = frame
 mainPanel.ZIndex = 2 
 
--- CALCULATE Y POSITIONS
+-- Utility function for sequential layout positioning
 local yPos = CONTROL_Y_START
 local function getNextY(height)
     local current = yPos
-    yPos = yPos + height + 5 -- Add 5px padding
+    yPos = yPos + height + BUTTON_MARGIN 
     return current
 end
 
--- HARVEST BUTTON (The "Run Command Harvester" button)
+-- HARVEST BUTTON
 local harvestButton = Instance.new("TextButton")
 harvestButton.Name = "HarvestButton"
 harvestButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT) 
 harvestButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT)) 
-harvestButton.Text = "RUN COMMAND HARVESTER"
+harvestButton.Text = "RUN DEEP COMMAND HARVEST"
 harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 harvestButton.Font = Enum.Font.SourceSansBold
 harvestButton.TextSize = 16
 harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255) 
 harvestButton.Parent = mainPanel
-harvestButton.ZIndex = 3 -- Ensure it is visible
 
 -- Search Input Box
 local searchBox = Instance.new("TextBox")
 searchBox.Size = UDim2.new(0.65, -10, 0, CONTROL_HEIGHT)
 searchBox.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
-searchBox.PlaceholderText = "Filter by name or path (e.g., 'teleport')"
+searchBox.PlaceholderText = "Filter by name (e.g., 'data' or 'level')"
 searchBox.Text = "" 
 searchBox.Font = Enum.Font.SourceSans
 searchBox.TextSize = 14
@@ -246,7 +246,7 @@ clearListButton.Text = "CLEAR COMMAND LIST"
 clearListButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 clearListButton.Font = Enum.Font.SourceSansBold
 clearListButton.TextSize = 16
-clearListButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Red for clearing action
+clearListButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) 
 clearListButton.Parent = mainPanel
 
 -- Results Frame (List)
@@ -279,11 +279,10 @@ outputLabel.BackgroundTransparency = 1
 outputLabel.Parent = mainPanel
 
 -- STATUS OUTPUT CONSOLE 
-statusOutputYOffset = yPos -- Capture current Y for text box positioning
 local statusOutput = Instance.new("TextBox")
 statusOutput.Size = UDim2.new(1, -10, 0, STATUS_OUTPUT_HEIGHT) 
-statusOutput.Position = UDim2.new(0, 5, 0, statusOutputYOffset) 
-statusOutput.Text = "Click 'RUN COMMAND HARVESTER' to start scanning. Once found, click any command to fire it with zero arguments."
+statusOutput.Position = UDim2.new(0, 5, 0, yPos) 
+statusOutput.Text = "Click 'RUN DEEP COMMAND HARVEST' to start scanning."
 statusOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 statusOutput.Font = Enum.Font.SourceSans
 statusOutput.TextSize = 12 
@@ -312,9 +311,6 @@ local function ToggleVisibility()
     minimizeButton.Text = targetText
     mainPanel.Visible = targetVisible
 end
-
--- Button Connection: Minimize Button
-minimizeButton.MouseButton1Click:Connect(ToggleVisibility)
 
 local function UpdateStatus(text, color)
     statusOutput.Text = text
@@ -352,7 +348,7 @@ local function CreateRemoteButton(remoteData)
     btn.RichText = true
     btn.Parent = resultsFrame
 
-    -- Button Connection: INSTANT ZERO-ARGUMENT EXECUTION
+    -- One-Click Execution Logic
     btn.MouseButton1Click:Connect(function()
         local Remote = remoteData.Instance
         
@@ -361,7 +357,6 @@ local function CreateRemoteButton(remoteData)
         -- Execute with NO ARGUMENTS
         local success, result = FireRemote(Remote, {}) 
 
-        -- Final Report
         if success then
             local resultString = result and FormatArgument(result) or "nil"
             UpdateStatus(
@@ -369,7 +364,6 @@ local function CreateRemoteButton(remoteData)
                 Color3.fromRGB(0, 255, 100)
             )
         else
-            -- If the execution fails, it usually means the remote is protected or expects arguments.
             UpdateStatus(
                 string.format("FAILURE: %s failed or error.\nPath: %s\nError: %s", Remote.Name, remoteData.Path, tostring(result)),
                 Color3.fromRGB(255, 0, 0)
@@ -380,12 +374,11 @@ local function CreateRemoteButton(remoteData)
     return btn
 end
 
--- Filtering logic
+-- Filter logic based on currentSearchQuery
 local function FilterResults(query)
     local filteredList = {}
     local lowerQuery = string.lower(query or "")
     
-    -- If no query, return the full list
     if lowerQuery == "" then
         return foundRemotes 
     end
@@ -404,47 +397,46 @@ local function FilterResults(query)
 end
 
 local function ClearCommandList()
-    -- Only destroy the buttons, keep the UIListLayout
+    -- Only destroy the buttons
     for _, child in ipairs(resultsFrame:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
-    -- Reset the list height
+    -- Reset the scrollable height
     resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
     
-    UpdateStatus("Command list cleared. Click 'RUN COMMAND HARVESTER' to scan again.", Color3.fromRGB(150, 150, 150))
+    UpdateStatus("Command list cleared. Run the harvester or click 'APPLY FILTER' to see commands.", Color3.fromRGB(150, 150, 150))
 end
 
 local function DisplayResults()
-    -- Step 1: Clear the list first (in case of filter)
+    -- Step 1: Clear the list first (to handle filtering)
     ClearCommandList()
     
-    -- Step 2: Apply Filter (if needed)
+    -- Step 2: Apply Filter 
     local listToDisplay = FilterResults(currentSearchQuery) 
 
     local totalItems = #listToDisplay
     local totalFound = #foundRemotes
 
-    -- Step 3: Handle Zero/Filtered Results
     if totalFound == 0 then
         -- No commands found at all
-        UpdateStatus(string.format("SCAN COMPLETE: Scanned %d instances. Zero callable commands found. This game is highly secured.", instancesScanned), Color3.fromRGB(255, 100, 0))
+        UpdateStatus(string.format("SCAN COMPLETE: Scanned %d instances. Zero commands found.", instancesScanned), Color3.fromRGB(255, 100, 0))
     elseif totalItems == 0 and totalFound > 0 then
         -- Commands were found, but none match the filter
-        UpdateStatus(string.format("No commands match the filter: '%s'. Total commands found: %d.", currentSearchQuery, totalFound), Color3.fromRGB(255, 165, 0))
+        UpdateStatus(string.format("No commands match the filter: '%s'. Total found: %d.", currentSearchQuery, totalFound), Color3.fromRGB(255, 165, 0))
     else
-        -- Step 4: Create and display the buttons
+        -- Step 3: Create and display the buttons
         for _, remote in ipairs(listToDisplay) do
             CreateRemoteButton(remote)
         end
         
         local statusText = totalItems == totalFound and 
-            string.format("SCAN COMPLETE: %d commands found (Scanned %d instances). Click to execute with 0 arguments.", totalFound, instancesScanned) or
+            string.format("SCAN COMPLETE: %d commands found. Click to execute with 0 arguments.", totalFound) or
             string.format("FILTER APPLIED: Showing %d of %d commands. Click to execute with 0 arguments.", totalItems, totalFound)
 
         UpdateStatus(statusText, Color3.fromRGB(0, 255, 100))
     end
     
-    -- Step 5: Adjust Canvas Size
+    -- Step 4: Adjust Canvas Size
     local totalHeight = totalItems * 27 
     resultsFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
 end
@@ -452,14 +444,16 @@ end
 local function RunRemoteScan()
     -- Clear internal data before starting the scan
     table.clear(foundRemotes)
-    instancesScanned = 0 -- Reset scan counter
-    
-    harvestButton.Text = "HARVESTING..."
+    instancesScanned = 0
+    currentSearchQuery = "" -- Clear filter on new harvest
+
+    searchBox.Text = ""
+    harvestButton.Text = "HARVESTING... (2.5s Delay)"
     harvestButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
     
-    UpdateStatus("Starting deep scan for RemoteEvents, RemoteFunctions, and Bindables...", Color3.fromRGB(255, 165, 0))
+    UpdateStatus("Starting deep scan for all callable objects in the game model...", Color3.fromRGB(255, 165, 0))
     
-    -- Run deep search starting from the game root
+    -- Run deep search in a separate thread (coroutine)
     local co = coroutine.wrap(function()
         for _, service in ipairs(SERVICES_TO_SCAN) do
             DeepSearchForRemotes(service, "game") 
@@ -467,24 +461,27 @@ local function RunRemoteScan()
     end)
     co()
     
-    -- Wait a little longer to ensure the deep search completes since it yields
+    -- Allow time for the yield and scan to complete
     task.wait(2.5) 
 
     DisplayResults()
     
-    harvestButton.Text = "RUN COMMAND HARVESTER"
+    harvestButton.Text = "RUN DEEP COMMAND HARVEST"
     harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255)
 end
 
--- Button Connection: Run Super Harvest Button
+-- ====================================================================
+-- EVENT CONNECTIONS
+-- ====================================================================
+
+minimizeButton.MouseButton1Click:Connect(ToggleVisibility)
+
 harvestButton.MouseButton1Click:Connect(function()
     task.spawn(RunRemoteScan)
 end)
 
--- Button Connection: Clear List Button
 clearListButton.MouseButton1Click:Connect(ClearCommandList)
 
--- Connect Search Button and Text Changed
 local function ApplyFilter()
     currentSearchQuery = searchBox.Text
     DisplayResults()
