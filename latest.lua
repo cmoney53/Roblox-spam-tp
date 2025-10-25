@@ -1,12 +1,10 @@
 --[[
-    UNIVERSAL SINGLE-CLICK EXECUTOR v9 (HYBRID)
+    UNIVERSAL SINGLE-CLICK EXECUTOR v9 (HYBRID) - HARVEST BUTTON CLARIFIED
     
-    This version combines the robust harvesting logic from the larger commander tool
-    with the requested simplified execution model:
-    1. Harvests all Callable Objects (Remote/Bindable).
+    1. Primary button is now clearly labeled "RUN COMMAND HARVESTER".
     2. Executes the command INSTANTLY upon clicking the list button using ZERO ARGUMENTS ({}).
     3. Includes Minimize and Search/Filter functionality.
-    4. Set to a larger height to display maximum results.
+    4. Set to a larger height (500px) to display maximum results.
 ]]
 
 local Game = game
@@ -16,7 +14,7 @@ local HttpService = Game:GetService("HttpService")
 
 -- Configuration Constants
 local FULL_WIDTH = 450 
-local FULL_HEIGHT = 500 -- Increased height to show more results
+local FULL_HEIGHT = 500 -- Height to show more results
 local MIN_HEIGHT = 30
 local isMinimized = false
 local currentSearchQuery = "" -- Search query state
@@ -201,11 +199,11 @@ local function getNextY(height)
     return current
 end
 
--- HARVEST BUTTON (The "Search for all commands" button)
+-- HARVEST BUTTON (The "Run Command Harvester" button)
 local harvestButton = Instance.new("TextButton")
 harvestButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT) 
 harvestButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT)) 
-harvestButton.Text = "SEARCH FOR ALL COMMANDS" 
+harvestButton.Text = "RUN COMMAND HARVESTER" -- CLARIFIED LABEL
 harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 harvestButton.Font = Enum.Font.SourceSansBold
 harvestButton.TextSize = 16
@@ -269,7 +267,7 @@ statusOutputYOffset = yPos -- Capture current Y for text box positioning
 local statusOutput = Instance.new("TextBox")
 statusOutput.Size = UDim2.new(1, -10, 0, STATUS_OUTPUT_HEIGHT) 
 statusOutput.Position = UDim2.new(0, 5, 0, statusOutputYOffset) 
-statusOutput.Text = "Click 'SEARCH FOR ALL COMMANDS' to start harvesting. Once found, click any command to fire it with zero arguments."
+statusOutput.Text = "Click 'RUN COMMAND HARVESTER' to start harvesting. Once found, click any command to fire it with zero arguments."
 statusOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 statusOutput.Font = Enum.Font.SourceSans
 statusOutput.TextSize = 12 
@@ -400,7 +398,7 @@ local function DisplayResults()
     local totalFound = #foundRemotes
 
     if totalFound == 0 then
-        -- No commands found (as requested: "like it never found none")
+        -- No commands found
         UpdateStatus("SCAN COMPLETE: Zero callable commands (Remote/Bindable) found. This game environment is very locked down.", Color3.fromRGB(255, 100, 0))
     elseif totalItems == 0 then
         -- Commands were found, but none match the filter
@@ -444,7 +442,7 @@ local function RunRemoteScan()
 
     DisplayResults()
     
-    harvestButton.Text = "SEARCH FOR ALL COMMANDS"
+    harvestButton.Text = "RUN COMMAND HARVESTER"
     harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255)
 end
 
