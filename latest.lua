@@ -1,11 +1,11 @@
 --[[
-    UNIVERSAL REMOTE COMMANDER v8: Scripts & Commands Harvest.
+    UNIVERSAL SINGLE-CLICK EXECUTOR v8
     
-    The harvester now collects and distinguishes between:
-    1. Callable Objects (Remotes/Bindables): Auto-execute on click.
-    2. Script Objects (LocalScript, Script, ModuleScript): Displays Source code on click.
-    
-    Execution logic remains generic and robust.
+    This tool is highly simplified:
+    1. Only harvests callable objects (Remote/Bindable).
+    2. Executes the command instantly upon click using ZERO ARGUMENTS ({}).
+    3. Provides direct execution feedback via console and status box.
+    4. Retains Search/Filter and Minimize functionality.
 ]]
 
 local Game = game
@@ -18,7 +18,14 @@ local FULL_WIDTH = 450
 local FULL_HEIGHT = 500 
 local MIN_HEIGHT = 30
 local isMinimized = false
-local currentView = "Harvester" 
+local currentSearchQuery = "" -- Search query state
+
+-- UI Layout Constants
+local CONTROL_HEIGHT = 30
+local CONTROL_Y_START = 5
+local RESULTS_LIST_HEIGHT = 330 -- Increased size for the list
+local STATUS_OUTPUT_HEIGHT = 80
+local statusOutputYOffset = 0 
 
 local SUSPICIOUS_KEYWORDS = {
     "teleport", "tp", "move", "position", "warp", "goto", "cframe", 
@@ -28,7 +35,6 @@ local SUSPICIOUS_KEYWORDS = {
     "char", "character", "load", "save", "debug", "test", "dev",
     "give", "add", "remove", "currency", "level", "xp", "money", "cash", "luck", 
     "hook", "client", "local", "trigger",
-    -- Keywords specific to scripts/secrets
     "secret", "key", "token", "password", "hidden", "exploit", "cheat" 
 }
 local SERVICES_TO_SCAN = {
@@ -40,15 +46,14 @@ local SERVICES_TO_SCAN = {
     Game
 }
 local foundRemotes = {}
-local selectedRemoteObject = nil -- Stores the actual object reference
 
 -- Utility to log to the console
 local function Log(text)
-    print("--- [UNIVERSAL COMMANDER] " .. text)
+    print("--- [UNIVERSAL EXECUTOR] " .. text)
 end
 
 -- ====================================================================
--- ARGUMENT FORMATTING AND CORE HARVESTER FUNCTIONS 
+-- CORE HARVESTER & UTILITY FUNCTIONS 
 -- ====================================================================
 
 -- Function to format a single argument for clean display in the output box
@@ -61,54 +66,12 @@ local function FormatArgument(val)
         return val and "true" or "false"
     elseif type(val) == "number" then
         return tostring(val)
-    elseif val:IsA("Player") then
-        return "Player(" .. val.Name .. ")"
-    elseif val:IsA("Vector3") then
-        return string.format("V3(%.1f, %.1f, %.1f)", val.X, val.Y, val.Z)
-    elseif val:IsA("CFrame") then
-        return string.format("CFR(%.1f, %.1f, %.1f, ...)", val.X, val.Y, val.Z) -- Only show pos for brevity
+    elseif type(val) == "userdata" and tostring(val):find("CFrame") then
+        local cframe = val
+        return string.format("CFR(%.1f, %.1f, %.1f, ...)", cframe.X, cframe.Y, cframe.Z)
     else
         return tostring(val)
     end
-end
-
--- Function to format the entire arguments table for clean display
-local function FormatArgsTable(args)
-    local formatted = {}
-    for _, arg in ipairs(args) do
-        table.insert(formatted, FormatArgument(arg))
-    end
-    return table.concat(formatted, ", ")
-end
-
-
--- GUESS ARGUMENTS
-local function GuessArguments(remoteName, remoteType)
-    local lowerName = string.lower(remoteName)
-    local prefill = ""
-    local hints = {}
-    
-    local isBindable = remoteType == "BindableEvent" or remoteType == "BindableFunction"
-    local targetType = isBindable and "Local Client Function (Bindable)" or "Server Remote Command (Remote)"
-
-    table.insert(hints, string.format("- **Target Type:** %s", targetType))
-
-    if string.find(lowerName, "teleport") or string.find(lowerName, "tp") or string.find(lowerName, "move") or string.find(lowerName, "cframe") then
-        prefill = "CFR(0, 50, 0)"
-        table.insert(hints, "- **Movement/CFrame Guess**:")
-        table.insert(hints, "  - `CFR(0, 50, 0)` (CFrame input)")
-        table.insert(hints, "  - `V3(0, 50, 0)` (Vector3 input)")
-    elseif string.find(lowerName, "give") or string.find(lowerName, "item") or string.find(lowerName, "add") then
-        prefill = "\"Sword\", 1"
-        table.insert(hints, "- **Item Grant Guess**:")
-        table.insert(hints, "  - `\"ItemName_STRING\", 1_NUMBER`")
-    else
-        prefill = "\"TestString\", true, 100" 
-        table.insert(hints, "- **Generic Guess**:")
-        table.insert(hints, "  - Try: `\"String\", true`, `CFR(x,y,z)` or leave blank.")
-    end
-    
-    return prefill, table.concat(hints, "\n")
 end
 
 local function IsCallableObject(instance)
@@ -118,17 +81,11 @@ local function IsCallableObject(instance)
            instance:IsA("BindableFunction")
 end
 
-local function IsScriptObject(instance)
-    return instance:IsA("LocalScript") or 
-           instance:IsA("Script") or 
-           instance:IsA("ModuleScript")
-end
-
--- NEW: DeepSearch now collects scripts as well
+-- DeepSearch now ONLY collects callable objects
 local function DeepSearchForRemotes(instance, path)
     if not instance then return end
 
-    if IsCallableObject(instance) or IsScriptObject(instance) then
+    if IsCallableObject(instance) then
         local instancePath = path .. "." .. instance.Name
         local lowerName = string.lower(instance.Name)
         
@@ -153,21 +110,48 @@ local function DeepSearchForRemotes(instance, path)
     end
 
     for _, child in ipairs(instance:GetChildren()) do
+        -- Skip scripts and only recurse on non-configuration items
         if not child:IsA("Configuration") and
            not child:IsA("MaterialService") and 
-           not child:IsA("LocalizationService")
+           not child:IsA("LocalizationService") and
+           not child:IsA("LocalScript") and -- Exclude scripts from search
+           not child:IsA("Script") and
+           not child:IsA("ModuleScript")
         then
             DeepSearchForRemotes(child, path .. "." .. child.Name)
         end
     end
 end
 
+local function FireRemote(remote, args)
+    local success, result
+    
+    local resultWrapper = function()
+        if remote:IsA("RemoteEvent") then
+            remote:FireServer(unpack(args)) 
+        elseif remote:IsA("BindableEvent") then
+            remote:Fire(unpack(args)) 
+        elseif remote:IsA("RemoteFunction") then
+            return remote:InvokeServer(unpack(args)) 
+        elseif remote:IsA("BindableFunction") then
+            return remote:Invoke(unpack(args)) 
+        else
+            error("Invalid Callable object type.")
+        end
+    end
+
+    success, result = pcall(resultWrapper)
+    
+    return success, result
+end
+
+
 -- ====================================================================
--- GUI CONSTRUCTION (Unchanged)
+-- GUI CONSTRUCTION 
 -- ====================================================================
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UniversalCommander"
+screenGui.Name = "UniversalExecutorSimple"
 screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
@@ -182,7 +166,7 @@ frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, MIN_HEIGHT) 
-title.Text = "Universal Remote Commander v8 (Scripts & Commands)"
+title.Text = "Universal Single-Click Executor v8"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
@@ -201,58 +185,65 @@ minimizeButton.TextSize = 20
 minimizeButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
 minimizeButton.Parent = frame
 
--- Tabs Frame
-local tabsFrame = Instance.new("Frame")
-tabsFrame.Size = UDim2.new(1, 0, 0, 30)
-tabsFrame.Position = UDim2.new(0, 0, 0, 30) 
-tabsFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-tabsFrame.Parent = frame
+-- MAIN PANEL
+local mainPanel = Instance.new("Frame")
+mainPanel.Size = UDim2.new(1, -10, 1, -35) 
+mainPanel.Position = UDim2.new(0, 5, 0, 35) 
+mainPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainPanel.Parent = frame
+mainPanel.ZIndex = 2 
 
-local harvTab = Instance.new("TextButton")
-harvTab.Name = "HarvesterTab"
-harvTab.Size = UDim2.new(0.5, 0, 1, 0)
-harvTab.Position = UDim2.new(0, 0, 0, 0)
-harvTab.Text = "① HARVESTER"
-harvTab.TextColor3 = Color3.fromRGB(200, 200, 255)
-harvTab.Font = Enum.Font.SourceSansBold
-harvTab.TextSize = 18
-harvTab.BackgroundColor3 = Color3.fromRGB(60, 60, 60) 
-harvTab.Parent = tabsFrame
+-- CALCULATE Y POSITIONS
+local yPos = CONTROL_Y_START
+local function getNextY(height)
+    local current = yPos
+    yPos = yPos + height + 5 -- Add 5px padding
+    return current
+end
 
-local execTab = harvTab:Clone()
-execTab.Name = "CommanderTab"
-execTab.Position = UDim2.new(0.5, 0, 0, 0)
-execTab.Text = "② COMMANDER"
-execTab.TextColor3 = Color3.fromRGB(255, 255, 100)
-execTab.BackgroundColor3 = Color3.fromRGB(40, 40, 40) 
-execTab.Parent = tabsFrame
-
--- HARVESTER PANEL 
-local harvestPanel = Instance.new("Frame")
-harvestPanel.Size = UDim2.new(1, -10, 1, -65) 
-harvestPanel.Position = UDim2.new(0, 5, 0, 65) 
-harvestPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-harvestPanel.Parent = frame
-harvestPanel.ZIndex = 2 
-
+-- HARVEST BUTTON (The "Search for all commands" button)
 local harvestButton = Instance.new("TextButton")
-harvestButton.Size = UDim2.new(1, -10, 0, 40)
-harvestButton.Position = UDim2.new(0, 5, 0, 5) 
-harvestButton.Text = "RUN SUPER HARVEST (ALL SCRIPTS & REMOTES)" 
+harvestButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT) 
+harvestButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT)) 
+harvestButton.Text = "SEARCH FOR ALL COMMANDS" 
 harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 harvestButton.Font = Enum.Font.SourceSansBold
-harvestButton.TextSize = 18
+harvestButton.TextSize = 16
 harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255) 
-harvestButton.Parent = harvestPanel
+harvestButton.Parent = mainPanel
 
+-- Search Input Box
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT)
+searchBox.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
+searchBox.PlaceholderText = "Filter by name or path (e.g., 'teleport', 'give')"
+searchBox.Text = "" 
+searchBox.Font = Enum.Font.SourceSans
+searchBox.TextSize = 14
+searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+searchBox.Parent = mainPanel
+
+-- Search/Filter Button
+local filterButton = Instance.new("TextButton")
+filterButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT)
+filterButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
+filterButton.Text = "APPLY FILTER" 
+filterButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+filterButton.Font = Enum.Font.SourceSansBold
+filterButton.TextSize = 16
+filterButton.BackgroundColor3 = Color3.fromRGB(0, 150, 200) 
+filterButton.Parent = mainPanel
+
+-- Results Frame (List)
 local resultsFrame = Instance.new("ScrollingFrame")
-resultsFrame.Size = UDim2.new(1, -10, 1, -55) 
-resultsFrame.Position = UDim2.new(0, 5, 0, 50) 
+resultsFrame.Size = UDim2.new(1, -10, 0, RESULTS_LIST_HEIGHT) 
+resultsFrame.Position = UDim2.new(0, 5, 0, getNextY(RESULTS_LIST_HEIGHT))
 resultsFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 resultsFrame.BorderSizePixel = 0
 resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 resultsFrame.ScrollBarThickness = 6
-resultsFrame.Parent = harvestPanel
+resultsFrame.Parent = mainPanel
 
 local listLayout = Instance.new("UIListLayout")
 listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -261,122 +252,38 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Padding = UDim.new(0, 2)
 listLayout.Parent = resultsFrame
 
--- COMMANDER PANEL 
-local execPanel = Instance.new("Frame")
-execPanel.Size = UDim2.new(1, -10, 1, -65) 
-execPanel.Position = UDim2.new(0, 5, 0, 65)
-execPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-execPanel.Parent = frame
-execPanel.Visible = false 
-execPanel.ZIndex = 2
+-- Status Output Console Label
+local outputLabel = Instance.new("TextLabel")
+outputLabel.Size = UDim2.new(1, -10, 0, 15)
+outputLabel.Position = UDim2.new(0, 5, 0, getNextY(15)) 
+outputLabel.Text = "Execution Status (0 Args):"
+outputLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+outputLabel.Font = Enum.Font.SourceSans
+outputLabel.TextSize = 14
+outputLabel.TextXAlignment = Enum.TextXAlignment.Left
+outputLabel.BackgroundTransparency = 1
+outputLabel.Parent = mainPanel
 
--- Path Box 
-local pathLabel = Instance.new("TextLabel")
-pathLabel.Size = UDim2.new(1, -10, 0, 15)
-pathLabel.Position = UDim2.new(0, 5, 0, 5) 
-pathLabel.Text = "Function/Script Path:"
-pathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-pathLabel.Font = Enum.Font.SourceSans
-pathLabel.TextSize = 14
-pathLabel.TextXAlignment = Enum.TextXAlignment.Left
-pathLabel.BackgroundTransparency = 1
-pathLabel.Parent = execPanel
-
-local pathBox = Instance.new("TextBox")
-pathBox.Size = UDim2.new(1, -10, 0, 30)
-pathBox.Position = UDim2.new(0, 5, 0, 20)
-pathBox.PlaceholderText = "Select a command/script on the left first."
-pathBox.Text = "" 
-pathBox.Font = Enum.Font.SourceSans
-pathBox.TextSize = 14
-pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-pathBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-pathBox.Parent = execPanel
-pathBox.TextEditable = false 
-
--- Arguments Box
-local argsLabel = pathLabel:Clone()
-argsLabel.Position = UDim2.new(0, 5, 0, 55)
-argsLabel.Text = "Arguments (Disabled for Scripts):"
-argsLabel.Parent = execPanel
-
-local argsBox = pathBox:Clone()
-argsBox.Size = UDim2.new(1, -10, 0, 30)
-argsBox.Position = UDim2.new(0, 5, 0, 70)
-argsBox.PlaceholderText = "\"Value\", 99999, true"
-argsBox.Text = "" 
-argsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-argsBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-argsBox.TextEditable = true
-argsBox.Parent = execPanel
-
--- Argument Help Box 
-local argHelp = Instance.new("TextLabel")
-argHelp.Size = UDim2.new(1, -10, 0, 30)
-argHelp.Position = UDim2.new(0, 5, 0, 105)
-argHelp.Text = "HINT: V3 = Vector3(x, y, z), CFR = CFrame(x, y, z). Use full Player Name to reference."
-argHelp.TextColor3 = Color3.fromRGB(255, 255, 100)
-argHelp.Font = Enum.Font.SourceSans
-argHelp.TextSize = 14
-argHelp.TextXAlignment = Enum.TextXAlignment.Left
-argHelp.BackgroundTransparency = 1
-argHelp.TextWrapped = true
-argHelp.Parent = execPanel
-
--- EXECUTE BUTTON
-local execButton = harvestButton:Clone()
-execButton.Size = UDim2.new(1, -10, 0, 40)
-execButton.Position = UDim2.new(0, 5, 0, 140) 
-execButton.Text = "EXECUTE CUSTOM COMMAND"
-execButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-execButton.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
-execButton.Parent = execPanel
-
--- PERMUTATION BUTTON
-local permutationButton = harvestButton:Clone()
-permutationButton.Size = UDim2.new(0.5, -8, 0, 40)
-permutationButton.Position = UDim2.new(0, 5, 0, 185) 
-permutationButton.Text = "TRY PERMUTATIONS"
-permutationButton.TextColor3 = Color3.fromRGB(20, 20, 20)
-permutationButton.Font = Enum.Font.SourceSansBold
-permutationButton.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
-permutationButton.Parent = execPanel
-
--- VIEW CODE TEMPLATE/SOURCE BUTTON 
-local codeTemplateButton = harvestButton:Clone()
-codeTemplateButton.Size = UDim2.new(0.5, -8, 0, 40)
-codeTemplateButton.Position = UDim2.new(0.5, 3, 0, 185) 
-codeTemplateButton.Text = "VIEW CODE TEMPLATE"
-codeTemplateButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-codeTemplateButton.Font = Enum.Font.SourceSansBold
-codeTemplateButton.BackgroundColor3 = Color3.fromRGB(255, 0, 150)
-codeTemplateButton.Parent = execPanel
-
-
--- Output Console
-local outputLabel = pathLabel:Clone()
-outputLabel.Position = UDim2.new(0, 5, 0, 235) 
-outputLabel.Text = "Execution Console Output / Script Source Code:"
-outputLabel.Parent = execPanel
-
-local execOutput = Instance.new("TextBox")
-execOutput.Size = UDim2.new(1, -10, 1, -255) 
-execOutput.Position = UDim2.new(0, 5, 0, 250) 
-execOutput.Text = "Select a command/function on the left to auto-execute, or a script to view its source."
-execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
-execOutput.Font = Enum.Font.SourceSans
-execOutput.TextSize = 12 -- Smaller font for code visibility
-execOutput.TextWrapped = true
-execOutput.TextXAlignment = Enum.TextXAlignment.Left
-execOutput.TextYAlignment = Enum.TextYAlignment.Top
-execOutput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-execOutput.MultiLine = true
-execOutput.TextEditable = false
-execOutput.Parent = execPanel
+-- STATUS OUTPUT CONSOLE 
+statusOutputYOffset = yPos -- Capture current Y for text box positioning
+local statusOutput = Instance.new("TextBox")
+statusOutput.Size = UDim2.new(1, -10, 0, STATUS_OUTPUT_HEIGHT) 
+statusOutput.Position = UDim2.new(0, 5, 0, statusOutputYOffset) 
+statusOutput.Text = "Click 'SEARCH FOR ALL COMMANDS' to start."
+statusOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusOutput.Font = Enum.Font.SourceSans
+statusOutput.TextSize = 12 
+statusOutput.TextWrapped = true
+statusOutput.TextXAlignment = Enum.TextXAlignment.Left
+statusOutput.TextYAlignment = Enum.TextYAlignment.Top
+statusOutput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+statusOutput.MultiLine = true
+statusOutput.TextEditable = false
+statusOutput.Parent = mainPanel
 
 
 -- ====================================================================
--- CONTROL LOGIC (Unchanged)
+-- CONTROL & DISPLAY LOGIC 
 -- ====================================================================
 
 local function ToggleVisibility()
@@ -389,47 +296,17 @@ local function ToggleVisibility()
     frame:TweenSize(UDim2.new(0, FULL_WIDTH, 0, targetHeight), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.2, true)
     
     minimizeButton.Text = targetText
-
-    tabsFrame.Visible = targetVisible
-    if currentView == "Harvester" then
-        harvestPanel.Visible = targetVisible
-        execPanel.Visible = false 
-    else
-        execPanel.Visible = targetVisible
-        harvestPanel.Visible = false 
-    end
+    mainPanel.Visible = targetVisible
 end
 
 -- Button Connection: Minimize Button
 minimizeButton.MouseButton1Click:Connect(ToggleVisibility)
 
-local function SwitchView(viewName)
-    if viewName == currentView then return end
-    
-    currentView = viewName
-    
-    if viewName == "Harvester" then
-        harvestPanel.Visible = true
-        execPanel.Visible = false
-        harvTab.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-        execTab.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    else -- Commander
-        harvestPanel.Visible = false
-        execPanel.Visible = true
-        harvTab.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        execTab.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    end
+local function UpdateStatus(text, color)
+    statusOutput.Text = text
+    statusOutput.TextColor3 = color
+    Log(text)
 end
-
--- Button Connection: Harvester Tab
-harvTab.MouseButton1Click:Connect(function() SwitchView("Harvester") end)
--- Button Connection: Commander Tab
-execTab.MouseButton1Click:Connect(function() SwitchView("Commander") end)
-
-
--- ====================================================================
--- HARVESTER DISPLAY LOGIC (MODIFIED: Handles Scripts/Commands)
--- ====================================================================
 
 local function CreateRemoteButton(remoteData)
     local btn = Instance.new("TextButton")
@@ -440,19 +317,12 @@ local function CreateRemoteButton(remoteData)
     btn.Font = Enum.Font.SourceSans
     btn.TextSize = 14
     
-    local abbr, nameColor, actionText 
-    
-    if IsCallableObject(remoteData.Instance) then
-        abbr = remoteData.Type:sub(1,1)
-        nameColor = "#FFC04D" 
-        if remoteData.Type == "RemoteFunction" then nameColor = "#4DFFFF" end
-        if remoteData.Type:find("Bindable") then nameColor = "#FF4DFF"; abbr = remoteData.Type:sub(1,2) end
-        actionText = " (Click to Auto-Execute)"
-    else -- Is Script
-        abbr = remoteData.Type:sub(1,1) == "M" and "M" or remoteData.Type:sub(1,2)
-        nameColor = "#00FF00" -- Green for Scripts/Code
-        actionText = " (Click to View Source)"
-        if remoteData.Type == "ModuleScript" then nameColor = "#00BFFF" end
+    -- Iconography based on type
+    local abbr, nameColor
+    if remoteData.Type == "RemoteEvent" then abbr = "RE"; nameColor = "#FFC04D" 
+    elseif remoteData.Type == "RemoteFunction" then abbr = "RF"; nameColor = "#4DFFFF" 
+    elseif remoteData.Type == "BindableEvent" then abbr = "BE"; nameColor = "#FF4DFF"
+    elseif remoteData.Type == "BindableFunction" then abbr = "BF"; nameColor = "#FF00FF"
     end
     
     local matchText = table.concat(remoteData.Categories, ", ")
@@ -468,138 +338,113 @@ local function CreateRemoteButton(remoteData)
     btn.RichText = true
     btn.Parent = resultsFrame
 
-    -- Button Connection: Dynamic Action
+    -- Button Connection: INSTANT ZERO-ARGUMENT EXECUTION
     btn.MouseButton1Click:Connect(function()
-        selectedRemoteObject = remoteData.Instance
-        local Instance = selectedRemoteObject
+        local Remote = remoteData.Instance
         
-        pathBox.Text = remoteData.Path 
-        pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        UpdateStatus(string.format("Attempting to fire %s: %s (0 args)...", Remote.ClassName, Remote.Name), Color3.fromRGB(255, 165, 0))
         
-        if IsCallableObject(Instance) then
-            -- Set UI for Command Mode
-            argsLabel.Text = "Arguments (Type 'V3(x,y,z)' or 'CFR(x,y,z)' for object types):"
-            argsBox.TextEditable = true
-            execButton.Text = "EXECUTE CUSTOM COMMAND"
-            codeTemplateButton.Text = "VIEW CODE TEMPLATE"
-            permutationButton.Visible = true
+        -- Execute with NO ARGUMENTS
+        local success, result = FireRemote(Remote, {}) 
 
-            -- AUTO-EXECUTION LOGIC (Unchanged from v7)
-            local guessedArgs, hints = GuessArguments(Instance.Name, Instance.ClassName)
-            argsBox.Text = guessedArgs 
-            
-            execOutput.Text = string.format(
-                "Auto-Executing %s: %s\n\n**Arguments Used (Guessed):** %s\n\nResult:", 
-                Instance.ClassName, 
-                Instance.Name, 
-                guessedArgs
+        -- Final Report
+        if success then
+            local resultString = result and FormatArgument(result) or "nil"
+            UpdateStatus(
+                string.format("SUCCESS: %s fired.\nPath: %s\nReturn: %s", Remote.Name, remoteData.Path, resultString),
+                Color3.fromRGB(0, 255, 100)
             )
-            execOutput.TextColor3 = Color3.fromRGB(255, 165, 0)
-            
-            local args = ParseArguments(guessedArgs)
-            local formattedArgs = FormatArgsTable(args) 
-
-            local success, result = FireRemote(Instance, args)
-
-            if success then
-                local resultString = result and FormatArgument(result) or "nil"
-                execOutput.Text = string.format(
-                    "Auto-Executed %s: %s\n\n**Arguments Used (Confirmed):** %s\n\nSUCCESS.\nFunction Return: %s\n\n---\nArgument Testing Checklist:\n%s\n\nModify the arguments above or click 'Try Permutations' if this result is not what you expected.", 
-                    Instance.ClassName, 
-                    Instance.Name, 
-                    formattedArgs, 
-                    resultString, 
-                    hints
-                )
-                execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
-            else
-                execOutput.Text = string.format(
-                    "Auto-Executed %s: %s\n\n**Arguments Used (Confirmed):** %s\n\nFAILURE.\nError Message: %s\n\n---\nArgument Testing Checklist:\n%s\n\nModify the arguments above or click 'Try Permutations'.", 
-                    Instance.ClassName, 
-                    Instance.Name, 
-                    formattedArgs, 
-                    tostring(result),
-                    hints
-                )
-                execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-            end
-            
-        elseif IsScriptObject(Instance) then
-            -- Set UI for Script Mode
-            argsLabel.Text = "Arguments (Disabled for Scripts):"
-            argsBox.Text = "--- Script Source Mode ---"
-            argsBox.TextEditable = false
-            execButton.Text = "--- CANNOT EXECUTE SCRIPT ---"
-            codeTemplateButton.Text = "VIEW SOURCE (RE-VIEW)"
-            permutationButton.Visible = false
-            
-            -- Display Source Code
-            local sourceText
-            local success, content = pcall(function()
-                return Instance.Source
-            end)
-            
-            if success and content then
-                sourceText = content
-                execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
-                execOutput.Text = string.format("--- SOURCE CODE FOR %s (%s) ---\n\n%s", Instance.Name, Instance.ClassName, sourceText)
-            else
-                sourceText = "Error: Failed to retrieve script source. This can happen with certain protected scripts or environments."
-                execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-                execOutput.Text = string.format("--- SOURCE CODE FOR %s (%s) ---\n\n%s\n\nError Details: %s", Instance.Name, Instance.ClassName, sourceText, tostring(content))
-            end
+        else
+            -- If the execution fails, it usually means the remote is protected or expects arguments.
+            UpdateStatus(
+                string.format("FAILURE: %s failed or error.\nPath: %s\nError: %s", Remote.Name, remoteData.Path, tostring(result)),
+                Color3.fromRGB(255, 0, 0)
+            )
         end
-        
-        SwitchView("Commander") 
     end)
     
     return btn
+end
+
+-- Filtering logic
+local function FilterResults(query)
+    local filteredList = {}
+    local lowerQuery = string.lower(query or "")
+    
+    if lowerQuery == "" then
+        return foundRemotes -- Return all if no query
+    end
+    
+    for _, remote in ipairs(foundRemotes) do
+        local lowerName = string.lower(remote.Name)
+        local lowerPath = string.lower(remote.Path)
+        
+        if string.find(lowerName, lowerQuery, 1, true) or 
+           string.find(lowerPath, lowerQuery, 1, true) then
+            table.insert(filteredList, remote)
+        end
+    end
+    
+    return filteredList
 end
 
 local function DisplayResults()
     for _, child in ipairs(resultsFrame:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
+    
+    -- Apply Filter
+    local listToDisplay = FilterResults(currentSearchQuery)
 
-    local totalItems = #foundRemotes
-    if totalItems == 0 then
-        execOutput.Text = "No remote commands or scripts found. This environment is highly secure."
-        resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-        return
-    end
+    local totalItems = #listToDisplay
+    local totalFound = #foundRemotes
 
-    for _, remote in ipairs(foundRemotes) do
-        CreateRemoteButton(remote)
+    if totalFound == 0 then
+        -- No commands found (as requested: "like it never found none")
+        UpdateStatus("HARVEST COMPLETE: No callable commands (Remote/Bindable) found in the environment.", Color3.fromRGB(255, 100, 0))
+    elseif totalItems == 0 then
+        -- Commands were found, but none match the filter
+        UpdateStatus(string.format("No commands match the filter: '%s'. Total commands found: %d.", currentSearchQuery, totalFound), Color3.fromRGB(255, 165, 0))
+    else
+        -- Commands found and/or filtered
+        for _, remote in ipairs(listToDisplay) do
+            CreateRemoteButton(remote)
+        end
+        
+        local statusText = totalItems == totalFound and 
+            string.format("HARVEST COMPLETE: %d commands found. Click to execute with 0 arguments.", totalFound) or
+            string.format("FILTER APPLIED: Showing %d of %d commands. Click to execute with 0 arguments.", totalItems, totalFound)
+
+        UpdateStatus(statusText, Color3.fromRGB(0, 255, 100))
     end
     
+    -- Adjust Canvas Size
     local totalHeight = totalItems * 27 
     resultsFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
-    
-    Log(string.format("SUPER HARVEST COMPLETE: %d total items (Scripts/Commands) found.", totalItems))
-    execOutput.Text = string.format("SUPER HARVEST COMPLETE: %d total items found. Click a command to **AUTO-EXECUTE** it or click a script to **VIEW SOURCE**.", totalItems)
-    execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
 end
 
 local function RunRemoteScan()
     table.clear(foundRemotes)
-    selectedRemoteObject = nil 
-    Log("Starting SUPER CHECK HARVEST for Scripts & Commands...")
     
     harvestButton.Text = "HARVESTING..."
     harvestButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
     
-    for _, service in ipairs(SERVICES_TO_SCAN) do
-        task.spawn(function()
+    UpdateStatus("Starting scan for RemoteEvents, RemoteFunctions, and Bindables...", Color3.fromRGB(255, 165, 0))
+    
+    -- Run deep search concurrently for speed
+    local co = coroutine.wrap(function()
+        for _, service in ipairs(SERVICES_TO_SCAN) do
             DeepSearchForRemotes(service, "game." .. (service and service.Name or "nil"))
-        end)
-    end
+            task.wait(0.05) -- Yield occasionally
+        end
+    end)
+    co()
     
-    local success, _ = pcall(function() task.wait(2) end)
-    if not success then Log("Warning: task.wait failed, possibly due to environment restrictions.") end
-    
+    task.wait(1.5) -- Give time for most popular services to be scanned
+
     DisplayResults()
     
-    harvestButton.Text = "RE-RUN SUPER HARVEST (ALL SCRIPTS & REMOTES)"
+    harvestButton.Text = "SEARCH FOR ALL COMMANDS"
     harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255)
 end
 
@@ -608,290 +453,15 @@ harvestButton.MouseButton1Click:Connect(function()
     task.spawn(RunRemoteScan)
 end)
 
--- ====================================================================
--- EXECUTOR LOGIC (Unchanged from v6/v7)
--- ====================================================================
-
-local function ParseArguments(argString)
-    local args = {}
-    
-    if string.len(argString) == 0 then return args end
-    
-    local function parseObjectArgs(objType, part)
-        local pattern = "%( *([^,]+) *, *([^,]+) *, *([^%)]+)%)"
-        local x, y, z = string.match(part, pattern)
-        if x and y and z then
-            local numX, numY, numZ = tonumber(x), tonumber(y), tonumber(z)
-            if numX ~= nil and numY ~= nil and numZ ~= nil then
-                if objType == "V3" then return Vector3.new(numX, numY, numZ) end
-                if objType == "CFR" then return CFrame.new(numX, numY, numZ) end
-                if objType == "C3" then return Color3.new(numX, numY, numZ) end
-            end
-        end
-        return nil
-    end
-
-    for part in string.gmatch(argString, "([^,]+)") do
-        local success, trimmedPart = pcall(function()
-            return string.gsub(part, "^%s*(.-)%s*$", "%1") 
-        end)
-        
-        if not success then
-             trimmedPart = part 
-        end
-        
-        local lowerPart = string.lower(trimmedPart)
-        
-        local obj
-        if lowerPart:sub(1, 3) == "v3(" then obj = parseObjectArgs("V3", trimmedPart) end
-        if lowerPart:sub(1, 4) == "cfr(" then obj = parseObjectArgs("CFR", trimmedPart) end
-        if lowerPart:sub(1, 3) == "c3(" then obj = parseObjectArgs("C3", trimmedPart) end
-        
-        if obj then
-            table.insert(args, obj)
-        elseif tonumber(trimmedPart) ~= nil then
-            table.insert(args, tonumber(trimmedPart)) 
-        elseif lowerPart == "true" then
-            table.insert(args, true) 
-        elseif lowerPart == "false" then
-            table.insert(args, false) 
-        elseif Players:FindFirstChild(trimmedPart) then
-            table.insert(args, Players:FindFirstChild(trimmedPart)) 
-        elseif lowerPart == "nil" then
-            table.insert(args, nil)
-        else
-            -- Insert as a raw string
-            table.insert(args, trimmedPart) 
-        end
-    end
-    
-    return args
+-- Connect Search Button and Text Changed
+local function ApplyFilter()
+    currentSearchQuery = searchBox.Text
+    DisplayResults()
 end
 
-local function FireRemote(remote, args)
-    local success, result
-    
-    local resultWrapper = function()
-        if remote:IsA("RemoteEvent") then
-            remote:FireServer(unpack(args)) 
-        elseif remote:IsA("BindableEvent") then
-            remote:Fire(unpack(args)) 
-        elseif remote:IsA("RemoteFunction") then
-            return remote:InvokeServer(unpack(args)) 
-        elseif remote:IsA("BindableFunction") then
-            return remote:Invoke(unpack(args)) 
-        else
-            error("Invalid Remote/Bindable object type.")
-        end
-    end
-
-    success, result = pcall(resultWrapper)
-    
-    return success, result
-end
-
--- Button Connection: Execute Custom Command
-execButton.MouseButton1Click:Connect(function()
-    local Instance = selectedRemoteObject 
-
-    if not Instance or not IsCallableObject(Instance) then
-        if IsScriptObject(Instance) then
-             execOutput.Text = "Cannot execute a Script/LocalScript/ModuleScript using the command executor. Click 'VIEW SOURCE' to re-view the code."
-        else
-            execOutput.Text = "Execution Error: No command selected or selected item is not executable."
-        end
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-    
-    local Remote = Instance 
-    -- ... (rest of the FireRemote logic is the same)
-    
-    local argString = argsBox.Text
-    local args = ParseArguments(argString)
-    local formattedArgs = FormatArgsTable(args) 
-    
-    execOutput.Text = string.format(
-        "Attempting to fire %s: %s\n\n**Arguments Passed (CONFIRMED):** %s\n\nResult:", 
-        Remote.ClassName, 
-        Remote.Name, 
-        formattedArgs 
-    )
-    execOutput.TextColor3 = Color3.fromRGB(255, 165, 0)
-
-    local success, result = FireRemote(Remote, args)
-    
-    -- Final Report
-    if success then
-        local resultString = result and FormatArgument(result) or "nil"
-        execOutput.Text = execOutput.Text .. "\nSUCCESS.\nFunction Return: " .. resultString
-        execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
-    else
-        execOutput.Text = execOutput.Text .. "\nFAILURE.\nError Message: " .. tostring(result)
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-    end
-end)
-
--- Button Connection: Try Permutations
-permutationButton.MouseButton1Click:Connect(function()
-    local Remote = selectedRemoteObject 
-
-    if not Remote or not IsCallableObject(Remote) then
-        execOutput.Text = "Permutation Error: Select an executable command first."
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-
-    local remoteName = Remote.Name
-    local testValue = 99999 
-    local testStatName = "TestString" 
-    
-    local permutations = {
-        {"Empty Arguments", {}},
-        {"Single String", {testStatName}},
-        {"Single Number (99999)", {testValue}},
-        {"Single Boolean (True)", {true}},
-        {"String, Number", {testStatName, testValue}},
-        {"Number, String", {testValue, testStatName}},
-        {"String, Number, Bool(True)", {testStatName, testValue, true}},
-    }
-    
-    local output = "--- PERMUTATION TEST: " .. remoteName .. " ---\n"
-    execOutput.Text = output
-    execOutput.TextColor3 = Color3.fromRGB(255, 165, 0)
-    
-    for i, test in ipairs(permutations) do
-        local testName, args = unpack(test)
-        
-        local success, result = FireRemote(Remote, args)
-        local resultString = result and FormatArgument(result) or "nil" 
-        local color = success and (resultString == "nil" and "#FFC04D" or "#00FF00") or "#FF0000" 
-        local formattedArgs = FormatArgsTable(args) 
-        
-        output = output .. string.format(
-            "%d. %s: <font color='%s'>%s</font>\n    Args: %s\n", 
-            i, 
-            testName, 
-            color, 
-            resultString, 
-            formattedArgs 
-        )
-        execOutput.Text = output
-        task.wait(0.1) 
-        
-        if success and resultString ~= "nil" then
-            execOutput.Text = output .. "\n\n--- FOUND VALID FORMAT! ---\nTest " .. i .. " produced a non-nil result. Try this argument structure manually!"
-            break
-        end
-    end
-    
-    execOutput.Text = execOutput.Text .. "\n\n--- PERMUTATION TEST COMPLETE ---"
-end)
-
--- GENERATE CODE TEMPLATE LOGIC 
-local function GenerateCodeTemplate(instance)
-    local instanceName = instance.Name
-    local instanceType = instance.ClassName
-    local path = instance.Path
-
-    if IsScriptObject(instance) then
-        -- Handle Script Source View
-        local sourceText
-        local success, content = pcall(function()
-            return instance.Source
-        end)
-        
-        if success and content then
-            sourceText = content
-        else
-            sourceText = "Error: Failed to retrieve script source. %s"
-        end
-        
-        return string.format(
-            "--- SOURCE CODE FOR %s (%s) ---\n" ..
-            "--- Path: %s\n" ..
-            "----------------------------------------------------------\n\n%s",
-            instanceName, instanceType, path, sourceText
-        )
-    end
-    
-    -- Handle Callable Object (Remote/Bindable) Template
-    local isRemote = instanceType == "RemoteEvent" or instanceType == "RemoteFunction"
-    local isFunction = instanceType == "RemoteFunction" or instanceType == "BindableFunction"
-    
-    local connectionType = isRemote and "OnServerEvent" or (isFunction and "OnInvoke" or "Event")
-    local senderArg = isRemote and "sendingPlayer" or "" 
-    local receiver = isRemote and "Server" or "Client"
-
-    local args = "arg1, arg2, ..."
-    local returns = isFunction and " return true" or ""
-    
-    local body = string.format(
-        "    -- Use the arguments (arg1, arg2, ...) to figure out the actual function logic.\n" ..
-        "    print(string.format(\"Received command from: %%s\", %s and %s.Name or \"LocalScript\"))\n" ..
-        "    %s\n", 
-        senderArg, senderArg, returns
-    )
-    
-    local logicCheck = "    -- 1. Argument validation check (Essential Server Security!)\n" ..
-                       "    -- If this is a Remote, sendingPlayer is always the first argument.\n" 
-                       
-    local playerCheck = isRemote and 
-        "    -- NOTE: If this is a RemoteEvent/Function, the first argument in the connection is ALWAYS the Player object.\n" or 
-        ""
-                       
-    local template = string.format(
-        "--- THEORETICAL %s CODE TEMPLATE for %s ---\n" ..
-        "--- This is the LUA code the %s is *most likely* running. ---\n" ..
-        "--- Use the argument structure below for your own call.\n" ..
-        "----------------------------------------------------------\n\n" ..
-        "local remote = %s\n" ..
-        "%s" .. 
-        "remote.%s(%s, function(%s) --> (Server/Client Code)\n" ..
-        "%s" ..
-        "    -- The client only sends the arguments: (%s)\n" ..
-        "%s\n" ..
-        "end)\n\n" ..
-        "----------------------------------------------------------\n" ..
-        "Your Client Call Must Look Like:\n" ..
-        "%s:FireServer(%s)\n" ..
-        "----------------------------------------------------------\n",
-        receiver, instanceName, receiver,
-        path, playerCheck,
-        connectionType, senderArg, args,
-        logicCheck, args,
-        body,
-        instanceName, "arg1, arg2, ..."
-    )
-    
-    return template
-end
-
-
--- Button Connection: View Code Template
-codeTemplateButton.MouseButton1Click:Connect(function()
-    local Instance = selectedRemoteObject 
-
-    if not Instance then
-        execOutput.Text = "Code Template/Source Error: Select an item first."
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-
-    local success, template = pcall(GenerateCodeTemplate, Instance)
-    
-    if success then
-        execOutput.Text = template
-        execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
-        -- Ensure the output box is configured for source viewing if it's a script
-        if IsScriptObject(Instance) then
-            execOutput.TextSize = 12
-        else
-            execOutput.TextSize = 16
-        end
-    else
-        execOutput.Text = "Critical Error in Template/Source Generation. Check the console for details."
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        Log("CRITICAL FAILURE in GenerateCodeTemplate: " .. tostring(template))
+filterButton.MouseButton1Click:Connect(ApplyFilter)
+searchBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        ApplyFilter()
     end
 end)
