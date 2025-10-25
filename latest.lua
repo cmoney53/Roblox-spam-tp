@@ -1,8 +1,8 @@
 --[[
-    UNIVERSAL REMOTE COMMANDER: The final, flexible tool.
+    UNIVERSAL REMOTE COMMANDER: Smart Argument Guessing & Guaranteed Execution.
     
-    This version includes the direct object reference fix for guaranteed execution
-    and improved guidance for debugging arguments (the "nil" result problem).
+    This version now provides a list of common argument combinations to debug 
+    the "nil" problem frequently seen with stat/value setters.
 ]]
 
 local Game = game
@@ -14,7 +14,8 @@ local SUSPICIOUS_KEYWORDS = {
     "admin", "kick", "ban", "kill", "respawn", "damage", "health", 
     "command", "server", "setprop", "property", "override",
     "item", "inventory", "stat", "update", "value", "setvalue", 
-    "char", "character", "load", "save", "debug", "test", "dev"
+    "char", "character", "load", "save", "debug", "test", "dev",
+    "give", "add", "remove", "currency", "level", "xp", "money", "cash", "luck"
 }
 local SERVICES_TO_SCAN = {
     Game:GetService("Workspace"), Game:GetService("ReplicatedStorage"), 
@@ -38,6 +39,46 @@ local function IsCallableObject(instance)
            instance:IsA("RemoteFunction") or
            instance:IsA("BindableEvent") or
            instance:IsA("BindableFunction")
+end
+
+-- Function to guess arguments and provide hints (IMPROVED LOGIC)
+local function GuessArguments(remoteName)
+    local lowerName = string.lower(remoteName)
+    local prefill = ""
+    local hints = {}
+    
+    -- PRIORITY 1: STAT/VALUE SETTERS
+    if string.find(lowerName, "stat") or string.find(lowerName, "value") or string.find(lowerName, "update") or string.find(lowerName, "set") or string.find(lowerName, "luck") then
+        prefill = "LocalPlayer, StatName_STRING, 99999_NUMBER"
+        table.insert(hints, "- **Stat Setter Guesses** (Try these in the input box):")
+        table.insert(hints, "  - `LocalPlayer, 99999` (If it only needs Player and Value)")
+        table.insert(hints, "  - `LocalPlayer, \"Luck\", 99999` (If it needs Stat Name string)")
+        table.insert(hints, "  - `99999` (If it only needs Value)")
+        table.insert(hints, "  - `LocalPlayer, 99999, true` (If it needs a final Boolean flag)")
+    -- PRIORITY 2: TELEPORT/TARGET
+    elseif string.find(lowerName, "teleport") or string.find(lowerName, "tp") or string.find(lowerName, "move") then
+        prefill = "TargetPlayerName_STRING"
+        table.insert(hints, "- **Teleport Guesses**:")
+        table.insert(hints, "  - `TargetPlayerName` (To teleport another player)")
+        table.insert(hints, "  - `LocalPlayer` (To maybe teleport yourself to a stored location)")
+    -- PRIORITY 3: GIVE/REMOVE ITEM
+    elseif string.find(lowerName, "give") or string.find(lowerName, "item") or string.find(lowerName, "add") then
+        prefill = "LocalPlayer, ItemName_STRING, 1_NUMBER"
+        table.insert(hints, "- **Item Guesses**:")
+        table.insert(hints, "  - `LocalPlayer, \"Sword\", 1`")
+    -- PRIORITY 4: ADMIN/COMMAND
+    elseif string.find(lowerName, "admin") or string.find(lowerName, "command") then
+        prefill = 'LocalPlayer, "Command_STRING"'
+        table.insert(hints, "- **Admin Guesses**:")
+        table.insert(hints, "  - `\"Give\", \"Money\", 10000` (Try commands common to admin systems)")
+    -- DEFAULT
+    else
+        prefill = "LocalPlayer"
+        table.insert(hints, "- **General Guess**:")
+        table.insert(hints, "  - Try: `LocalPlayer`, `true`, or just leave the box blank.")
+    end
+    
+    return prefill, table.concat(hints, "\n")
 end
 
 -- Recursive function to search for all callable objects matching keywords
@@ -79,7 +120,7 @@ local function DeepSearchForRemotes(instance, path)
 end
 
 -- ====================================================================
--- GUI CONSTRUCTION
+-- GUI CONSTRUCTION (Unchanged)
 -- ====================================================================
 
 local screenGui = Instance.new("ScreenGui")
@@ -98,7 +139,7 @@ frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "Universal Remote Commander (Ultimate Exploit Tool)"
+title.Text = "Universal Remote Commander (Smart Exploitation Tool)"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
@@ -122,7 +163,7 @@ harvestTitle.Parent = harvestPanel
 local harvestButton = Instance.new("TextButton")
 harvestButton.Size = UDim2.new(1, -10, 0, 40)
 harvestButton.Position = UDim2.new(0, 5, 0, 35)
-harvestButton.Text = "RUN ULTIMATE HARVEST"
+harvestButton.Text = "RUN SMART HARVEST"
 harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 harvestButton.Font = Enum.Font.SourceSansBold
 harvestButton.TextSize = 18
@@ -186,20 +227,20 @@ pathBox.TextEditable = false
 -- Arguments Box
 local argsLabel = pathLabel:Clone()
 argsLabel.Position = UDim2.new(0, 5, 0, 85)
-argsLabel.Text = "Arguments (use commas, NO quotes needed for strings):"
+argsLabel.Text = "Arguments (Edit the guessed values below):"
 argsLabel.Parent = execPanel
 
 local argsBox = pathBox:Clone()
 argsBox.Size = UDim2.new(1, -10, 0, 30)
 argsBox.Position = UDim2.new(0, 5, 0, 100)
-argsBox.PlaceholderText = "Example: PlayerName, 5000, true"
+argsBox.PlaceholderText = "LocalPlayer, StatName, NewValue"
 argsBox.Text = "" 
 argsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 argsBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
 argsBox.TextEditable = true
 argsBox.Parent = execPanel
 
--- Argument Help Box (New Feature)
+-- Argument Help Box 
 local argHelp = Instance.new("TextLabel")
 argHelp.Size = UDim2.new(1, -10, 0, 30)
 argHelp.Position = UDim2.new(0, 5, 0, 135)
@@ -214,7 +255,7 @@ argHelp.Parent = execPanel
 
 local execButton = harvestButton:Clone()
 execButton.Size = UDim2.new(1, -10, 0, 40)
-execButton.Position = UDim2.new(0, 5, 0, 170) -- Adjusted position
+execButton.Position = UDim2.new(0, 5, 0, 170) 
 execButton.Text = "EXECUTE COMMAND"
 execButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 execButton.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
@@ -222,13 +263,13 @@ execButton.Parent = execPanel
 
 -- Output Console
 local outputLabel = pathLabel:Clone()
-outputLabel.Position = UDim2.new(0, 5, 0, 215) -- Adjusted position
+outputLabel.Position = UDim2.new(0, 5, 0, 215) 
 outputLabel.Text = "Execution Console Output:"
 outputLabel.Parent = execPanel
 
 local execOutput = Instance.new("TextBox")
-execOutput.Size = UDim2.new(1, -10, 1, -240) -- Adjusted size
-execOutput.Position = UDim2.new(0, 5, 0, 230) -- Adjusted position
+execOutput.Size = UDim2.new(1, -10, 1, -240) 
+execOutput.Position = UDim2.new(0, 5, 0, 230) 
 execOutput.Text = "Select a command on the left and enter arguments to begin."
 execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 execOutput.Font = Enum.Font.SourceSans
@@ -271,23 +312,22 @@ local function CreateRemoteButton(remoteData)
     btn.MouseButton1Click:Connect(function()
         -- Store the direct object reference and update the GUI
         selectedRemoteObject = remoteData.Instance
-        pathBox.Text = remoteData.Path -- Only showing the path string
+        pathBox.Text = remoteData.Path 
         pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
         
-        execOutput.Text = string.format("Command Selected: %s (%s)\nPath: %s\n\nEnter the arguments required by the remote and click EXECUTE.", 
+        local guessedArgs, hints = GuessArguments(remoteData.Name)
+        
+        argsBox.Text = guessedArgs -- Auto-fill the guess
+        
+        execOutput.Text = string.format(
+            "Command Selected: %s (%s)\nPath: %s\n\nGuessed Argument Format: %s\n\n---\n\n**Argument Testing Checklist:**\n%s\n\nTry the suggested formats and watch for a SUCCESS result!", 
             remoteData.Name, 
             remoteData.Type, 
-            remoteData.Path
+            remoteData.Path,
+            guessedArgs,
+            hints -- Show the required types based on the guess
         )
         execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
-        -- Provide an initial guess for the arguments
-        if string.find(remoteData.Name, "stat", 1, true) or string.find(remoteData.Name, "value", 1, true) then
-            argsBox.Text = "LocalPlayer, StatName, NewValue"
-        elseif string.find(remoteData.Name, "teleport", 1, true) or string.find(remoteData.Name, "move", 1, true) then
-            argsBox.Text = "TargetPlayerName"
-        else
-            argsBox.Text = "LocalPlayer"
-        end
     end)
     
     return btn
@@ -319,7 +359,7 @@ end
 local function RunRemoteScan()
     table.clear(foundRemotes)
     selectedRemoteObject = nil -- Clear the selected object
-    Log("Starting ULTIMATE CODE HARVEST...")
+    Log("Starting SMART CODE HARVEST...")
     
     harvestButton.Text = "HARVESTING..."
     harvestButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
@@ -336,7 +376,7 @@ local function RunRemoteScan()
     
     DisplayResults()
     
-    harvestButton.Text = "RE-RUN ULTIMATE HARVEST"
+    harvestButton.Text = "RE-RUN SMART HARVEST"
     harvestButton.BackgroundColor3 = Color3.fromRGB(130, 0, 255)
 end
 
@@ -361,18 +401,20 @@ local function ParseArguments(argString)
         local numberValue = tonumber(part)
         if numberValue ~= nil then
             table.insert(args, numberValue) -- Is a number
-        elseif part == "true" then
+        elseif string.lower(part) == "true" then
             table.insert(args, true) -- Is boolean true
-        elseif part == "false" then
+        elseif string.lower(part) == "false" then
             table.insert(args, false) -- Is boolean false
-        elseif part == "LocalPlayer" then
+        elseif string.lower(part) == "localplayer" then
             table.insert(args, LocalPlayer) -- Pass the local player instance
         elseif Players:FindFirstChild(part) then
             table.insert(args, Players:FindFirstChild(part)) -- Pass a player instance by name
-        elseif part == "nil" then
+        elseif string.lower(part) == "nil" then
             table.insert(args, nil)
         else
-            table.insert(args, part) -- Default to string (StatName, ItemName, etc.)
+            -- If it's none of the above, it's treated as a raw string (e.g., "StatName")
+            -- We assume the user is typing the string literal they want (e.g., "Luck" or "Sword")
+            table.insert(args, part) 
         end
     end
     
@@ -380,10 +422,10 @@ local function ParseArguments(argString)
 end
 
 execButton.MouseButton1Click:Connect(function()
-    local path = pathBox.Text -- Just for display purposes
+    local path = pathBox.Text 
     local argString = argsBox.Text
     
-    local Remote = selectedRemoteObject -- Use the globally stored object reference
+    local Remote = selectedRemoteObject 
 
     if not Remote or not IsCallableObject(Remote) then
         execOutput.Text = "Execution Error: No valid command selected. Please click an item in the Harvester list first."
