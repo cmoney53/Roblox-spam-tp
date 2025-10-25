@@ -1,22 +1,20 @@
+
 --[[
-    DUAL-PANEL HARVESTER & EXECUTOR: The final, all-in-one tool.
+    UNIVERSAL REMOTE COMMANDER: The final, flexible tool.
     
     Left Panel: Universal Code Harvester
-    - Scans the entire game for suspicious RemoteEvents and other callable functions.
+    - Scans the entire game for callable RemoteEvents/Functions.
     
-    Right Panel: Remote Executor
-    - Allows you to select a remote from the left, set a target, and fire the final "Bring" exploit script.
+    Right Panel: Remote Commander
+    - Allows you to select a remote from the left and manually set the arguments (parameters) to fire the command.
     
-    This is designed to bypass strong anti-exploits by finding and abusing the game's own developer-made commands.
+    This is the most direct way to execute any command found in the game's code.
 ]]
 
 local Game = game
 local Players = Game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local RunService = Game:GetService("RunService")
-local CoreGui = Game:GetService("CoreGui")
-local ReplicatedStorage = Game:GetService("ReplicatedStorage")
-local HttpService = Game:GetService("HttpService") -- Used for its UUID function (better than os.clock() for unique IDs)
+local HttpService = Game:GetService("HttpService") 
 local SUSPICIOUS_KEYWORDS = {
     "teleport", "tp", "move", "position", "warp", "goto", "cframe", 
     "admin", "kick", "ban", "kill", "respawn", "damage", "health", 
@@ -36,7 +34,7 @@ local foundRemotes = {}
 
 -- Utility to log to the console
 local function Log(text)
-    print("--- [DUAL HACKER] " .. text)
+    print("--- [UNIVERSAL COMMANDER] " .. text)
 end
 
 -- Function to check if an instance is a callable remote/bindable object
@@ -60,7 +58,7 @@ local function DeepSearchForRemotes(instance, path)
             if string.find(lowerName, keyword) then
                 table.insert(categories, keyword)
             end
-        end
+        }
 
         if #categories > 0 then
             table.insert(foundRemotes, {
@@ -68,7 +66,7 @@ local function DeepSearchForRemotes(instance, path)
                 Path = instancePath, 
                 Type = instance.ClassName,
                 Categories = categories,
-                ID = HttpService:GenerateGUID(false) -- Unique ID for lookup
+                ID = HttpService:GenerateGUID(false)
             })
         end
     end
@@ -90,11 +88,11 @@ end
 -- ====================================================================
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "DualPanelHacker"
-screenGui.Parent = CoreGui
+screenGui.Name = "UniversalCommander"
+screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 780, 0, 500) -- Wide frame for two panels
+frame.Size = UDim2.new(0, 780, 0, 500) 
 frame.Position = UDim2.new(0.5, -390, 0.5, -250)
 frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 frame.BorderSizePixel = 2
@@ -105,7 +103,7 @@ frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "Dual-Panel Remote Harvester & Executor"
+title.Text = "Universal Remote Commander (Ultimate Exploit Tool)"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
@@ -152,7 +150,7 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Padding = UDim.new(0, 2)
 listLayout.Parent = resultsFrame
 
--- RIGHT PANEL: EXECUTOR
+-- RIGHT PANEL: COMMANDER
 local execPanel = Instance.new("Frame")
 execPanel.Size = UDim2.new(0.5, -10, 1, -40)
 execPanel.Position = UDim2.new(0.5, 5, 0, 35)
@@ -161,45 +159,69 @@ execPanel.Parent = frame
 
 local execTitle = title:Clone()
 execTitle.Name = "ExecutorTitle"
-execTitle.Text = "STEP 2: REMOTE EXECUTOR"
+execTitle.Text = "STEP 2: REMOTE COMMANDER"
 execTitle.TextColor3 = Color3.fromRGB(255, 255, 100)
 execTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 execTitle.Parent = execPanel
 
+-- Path Box (Uneditable by user, set by Harvester)
+local pathLabel = Instance.new("TextLabel")
+pathLabel.Size = UDim2.new(1, -10, 0, 15)
+pathLabel.Position = UDim2.new(0, 5, 0, 35)
+pathLabel.Text = "Remote Path:"
+pathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+pathLabel.Font = Enum.Font.SourceSans
+pathLabel.TextSize = 14
+pathLabel.TextXAlignment = Enum.TextXAlignment.Left
+pathLabel.BackgroundTransparency = 1
+pathLabel.Parent = execPanel
+
 local pathBox = Instance.new("TextBox")
 pathBox.Size = UDim2.new(1, -10, 0, 30)
-pathBox.Position = UDim2.new(0, 5, 0, 35)
-pathBox.PlaceholderText = "Path of RemoteEvent (e.g., game.RbltSrv.TeleportEvent)"
-pathBox.Text = "" -- Will be populated on click
+pathBox.Position = UDim2.new(0, 5, 0, 50)
+pathBox.PlaceholderText = "Select a command on the left first."
+pathBox.Text = "" 
 pathBox.Font = Enum.Font.SourceSans
 pathBox.TextSize = 14
 pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 pathBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
 pathBox.Parent = execPanel
-pathBox.TextEditable = false -- Read-only once a path is selected
+pathBox.TextEditable = false -- Path is read-only after selection
 
-local targetBox = pathBox:Clone()
-targetBox.Size = UDim2.new(1, -10, 0, 30)
-targetBox.Position = UDim2.new(0, 5, 0, 70)
-targetBox.PlaceholderText = "Target Player Name"
-targetBox.Text = LocalPlayer.Name == "Player1" and "Player2" or "Player1" -- Placeholder target
-targetBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-targetBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-targetBox.TextEditable = true
-targetBox.Parent = execPanel
+-- Arguments Box
+local argsLabel = pathLabel:Clone()
+argsLabel.Position = UDim2.new(0, 5, 0, 85)
+argsLabel.Text = "Arguments (use commas to separate, e.g., 'TargetPlayerName, 100, true')"
+argsLabel.Parent = execPanel
+
+local argsBox = pathBox:Clone()
+argsBox.Size = UDim2.new(1, -10, 0, 30)
+argsBox.Position = UDim2.new(0, 5, 0, 100)
+argsBox.PlaceholderText = "Example: 'MyWorld, 50, true' (Leave blank for no arguments)"
+argsBox.Text = "" 
+argsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+argsBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+argsBox.TextEditable = true
+argsBox.Parent = execPanel
 
 local execButton = harvestButton:Clone()
 execButton.Size = UDim2.new(1, -10, 0, 40)
-execButton.Position = UDim2.new(0, 5, 0, 105)
-execButton.Text = "ATTEMPT FINAL BRING"
+execButton.Position = UDim2.new(0, 5, 0, 140)
+execButton.Text = "EXECUTE COMMAND"
 execButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 execButton.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
 execButton.Parent = execPanel
 
-local execOutput = Instance.new("TextLabel")
-execOutput.Size = UDim2.new(1, -10, 1, -155)
-execOutput.Position = UDim2.new(0, 5, 0, 150)
-execOutput.Text = "Select a command on the left to begin."
+-- Output Console
+local outputLabel = pathLabel:Clone()
+outputLabel.Position = UDim2.new(0, 5, 0, 185)
+outputLabel.Text = "Execution Console Output:"
+outputLabel.Parent = execPanel
+
+local execOutput = Instance.new("TextBox")
+execOutput.Size = UDim2.new(1, -10, 1, -210)
+execOutput.Position = UDim2.new(0, 5, 0, 200)
+execOutput.Text = "Select a command on the left and enter arguments to begin."
 execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 execOutput.Font = Enum.Font.SourceSans
 execOutput.TextSize = 16
@@ -207,6 +229,8 @@ execOutput.TextWrapped = true
 execOutput.TextXAlignment = Enum.TextXAlignment.Left
 execOutput.TextYAlignment = Enum.TextYAlignment.Top
 execOutput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+execOutput.MultiLine = true
+execOutput.TextEditable = false
 execOutput.Parent = execPanel
 
 -- ====================================================================
@@ -239,13 +263,14 @@ local function CreateRemoteButton(remoteData)
     btn.MouseButton1Click:Connect(function()
         pathBox.Text = remoteData.Path
         pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-        execOutput.Text = string.format("Selected command: %s\nType: %s\nPath: %s\n\nReady to fire. Make sure '%s' is the correct target.", 
+        execOutput.Text = string.format("Command Selected: %s (%s)\nPath: %s\n\nEnter the arguments required by the remote and click EXECUTE.", 
             remoteData.Name, 
             remoteData.Type, 
-            remoteData.Path, 
-            targetBox.Text
+            remoteData.Path
         )
         execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
+        -- Set a common initial argument as a hint
+        argsBox.Text = (remoteData.Type == "RemoteEvent" or remoteData.Type == "RemoteFunction") and "nil, TargetPlayerName" or ""
     end)
     
     return btn
@@ -282,8 +307,14 @@ local function RunRemoteScan()
     harvestButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
     
     for _, service in ipairs(SERVICES_TO_SCAN) do
-        DeepSearchForRemotes(service, "game." .. (service and service.Name or "nil"))
+        task.spawn(function()
+            -- Add a brief delay to prevent potential timeouts on huge games
+            DeepSearchForRemotes(service, "game." .. (service and service.Name or "nil"))
+        end)
     end
+    
+    -- Wait briefly for spawns to complete (crude, but works in executor environments)
+    task.wait(2) 
     
     DisplayResults()
     
@@ -300,94 +331,103 @@ end)
 -- ====================================================================
 
 local function FindInstanceByPath(path)
-    -- This function converts "game.ReplicatedStorage.Remote" into the actual instance
     local parts = string.split(path, ".")
     local current = Game
-    for i = 2, #parts do -- Start at 2 to skip "game"
+    for i = 2, #parts do 
         if not current then return nil end
         current = current:FindFirstChild(parts[i])
     end
     return current
 end
 
+local function ParseArguments(argString)
+    local args = {}
+    
+    if string.len(argString) == 0 then return args end
+    
+    -- Split by comma and trim whitespace
+    for part in string.gmatch(argString, "([^,]+)") do
+        part = string.gsub(part, "^%s*(.-)%s*$", "%1") -- Trim whitespace
+        
+        -- Try to interpret the type of the argument
+        local numberValue = tonumber(part)
+        if numberValue ~= nil then
+            table.insert(args, numberValue) -- Is a number
+        elseif part == "true" then
+            table.insert(args, true) -- Is boolean true
+        elseif part == "false" then
+            table.insert(args, false) -- Is boolean false
+        elseif string.match(part, "TargetPlayerName") then -- Placeholder for target
+            local targetPlayer = Players:FindFirstChild(string.gsub(part, "TargetPlayerName", argsBox.Text))
+            if targetPlayer then
+                table.insert(args, targetPlayer)
+            else
+                -- If it fails to find the player, pass the string
+                table.insert(args, part)
+            end
+        elseif part == "LocalPlayer" then
+            table.insert(args, LocalPlayer) -- Pass the local player instance
+        elseif string.match(part, "^[A-Za-z_]+$") then
+            -- Try to find a player by name if it's a simple string
+            local player = Players:FindFirstChild(part)
+            if player then
+                table.insert(args, player)
+            else
+                table.insert(args, part) -- Is a simple string
+            end
+        elseif part == "nil" then
+            table.insert(args, nil)
+        else
+            table.insert(args, part) -- Default to string (CFrame, complex name, etc.)
+        end
+    end
+    
+    return args
+end
+
 execButton.MouseButton1Click:Connect(function()
     local path = pathBox.Text
-    local targetName = targetBox.Text
+    local argString = argsBox.Text
     
     if path == "" or path == pathBox.PlaceholderText then
         execOutput.Text = "Error: Please select a command on the left first."
         execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
-    if targetName == "" then
-        execOutput.Text = "Error: Please enter a target player's name."
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
     
-    local Target = Players:FindFirstChild(targetName)
-    if not Target then
-        execOutput.Text = "Error: Target player '" .. targetName .. "' not found."
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-
     local Remote = FindInstanceByPath(path)
-    if not Remote or (not Remote:IsA("RemoteEvent") and not Remote:IsA("RemoteFunction")) then
-        execOutput.Text = "Error: Path does not lead to a valid RemoteEvent/Function."
+    if not Remote or (not IsCallableObject(Remote)) then
+        execOutput.Text = "Error: Path does not lead to a valid Remote/Bindable object."
         execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
 
-    local MyRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not MyRoot then
-        execOutput.Text = "Error: Your character's HumanoidRootPart not found."
-        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
-        return
-    end
-
-    local MyCFrame = MyRoot.CFrame
+    local args = ParseArguments(argString)
     
-    execOutput.Text = string.format("Attempting to fire: %s\nTarget: %s\nTrying parameter combinations...", Remote.Name, targetName)
+    execOutput.Text = string.format("Attempting to fire %s: %s\nArguments: %s\n\nResult:", Remote.ClassName, Remote.Name, table.concat(args, ", "))
     execOutput.TextColor3 = Color3.fromRGB(255, 165, 0)
+
+    local success, result
     
-    local success = false
-    
-    -- Attempt 1: TargetPlayer, DestinationCFrame (Most common 'Bring' signature)
-    local s1, e1 = pcall(function() Remote:FireServer(Target, MyCFrame) end)
-    if s1 and not e1 then success = true end
-
-    -- Attempt 2: TargetPlayer only (Server pulls CFrame automatically)
-    if not success then
-        local s2, e2 = pcall(function() Remote:FireServer(Target) end)
-        if s2 and not e2 then success = true end
+    if Remote:IsA("RemoteEvent") or Remote:IsA("BindableEvent") then
+        -- Fire for Events
+        success, result = pcall(function()
+            Remote:FireServer(unpack(args)) 
+        end)
+    elseif Remote:IsA("RemoteFunction") or Remote:IsA("BindableFunction") then
+        -- Invoke for Functions (waiting for a return value)
+        success, result = pcall(function()
+            return Remote:InvokeServer(unpack(args)) 
+        end)
     end
     
-    -- Attempt 3: DestinationCFrame only (Remote assumes LocalPlayer is target)
-    if not success then
-        local s3, e3 = pcall(function() Remote:FireServer(MyCFrame) end)
-        if s3 and not e3 then success = true end
-    end
-
-    -- Attempt 4: CFrame, TargetPlayer (Less common, but seen in some custom admins)
-    if not success then
-        local s4, e4 = pcall(function() Remote:FireServer(MyCFrame, Target) end)
-        if s4 and not e4 then success = true end
-    end
-
-    -- Attempt 5: No Arguments (Remote expects the server to figure it out)
-    if not success then
-        local s5, e5 = pcall(function() Remote:FireServer() end)
-        if s5 and not e5 then success = true end
-    end
-
-
     -- Final Report
     if success then
-        execOutput.Text = "SUCCESS! Remote fired. Check if " .. targetName .. " has moved!"
+        local resultString = result and tostring(result) or "nil"
+        execOutput.Text = execOutput.Text .. "\nSUCCESS.\nServer Return: " .. resultString
         execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
     else
-        execOutput.Text = "FAILURE. Remote failed to fire or was rejected by the server. Try a different command on the left."
+        execOutput.Text = execOutput.Text .. "\nFAILURE.\nError Message: " .. tostring(result)
         execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
     end
 end)
