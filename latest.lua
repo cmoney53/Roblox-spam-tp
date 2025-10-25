@@ -1,13 +1,11 @@
 --[[
-    UNIVERSAL SINGLE-CLICK EXECUTOR v10 - ROBUST HARVESTER
+    UNIVERSAL SINGLE-CLICK EXECUTOR v13 - CLEAR LIST BUTTON ADDED
     
-    This version includes the ultimate fix for the "no commands showing" issue by 
-    forcing a scan of the entire 'game' hierarchy and uses a more robust pathing system.
+    CRITICAL FIX: Added a dedicated 'CLEAR COMMAND LIST' button to instantly 
+    wipe the displayed results list without re-running the harvester.
     
-    1. Primary button is clearly labeled "RUN COMMAND HARVESTER".
-    2. Executes the command INSTANTLY upon clicking the list button using ZERO ARGUMENTS ({}).
-    3. Includes Minimize and Search/Filter functionality.
-    4. Set to stable 500px height.
+    1. Includes the working harvest and list display logic.
+    2. Executes the command INSTANTLY upon clicking using ZERO ARGUMENTS ({}).
 ]]
 
 local Game = game
@@ -169,7 +167,7 @@ frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, MIN_HEIGHT) 
-title.Text = "Universal Single-Click Executor v10"
+title.Text = "Universal Single-Click Executor v13"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
@@ -219,9 +217,9 @@ harvestButton.ZIndex = 3 -- Ensure it is visible
 
 -- Search Input Box
 local searchBox = Instance.new("TextBox")
-searchBox.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT)
+searchBox.Size = UDim2.new(0.65, -10, 0, CONTROL_HEIGHT)
 searchBox.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
-searchBox.PlaceholderText = "Filter by name or path (e.g., 'teleport', 'give')"
+searchBox.PlaceholderText = "Filter by name or path (e.g., 'teleport')"
 searchBox.Text = "" 
 searchBox.Font = Enum.Font.SourceSans
 searchBox.TextSize = 14
@@ -231,14 +229,25 @@ searchBox.Parent = mainPanel
 
 -- Search/Filter Button
 local filterButton = Instance.new("TextButton")
-filterButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT)
-filterButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
+filterButton.Size = UDim2.new(0.35, 0, 0, CONTROL_HEIGHT)
+filterButton.Position = UDim2.new(0.65, 5, 0, yPos)
 filterButton.Text = "APPLY FILTER" 
 filterButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 filterButton.Font = Enum.Font.SourceSansBold
 filterButton.TextSize = 16
 filterButton.BackgroundColor3 = Color3.fromRGB(0, 150, 200) 
 filterButton.Parent = mainPanel
+
+-- CLEAR LIST Button (New: Clears the display without re-harvesting)
+local clearListButton = Instance.new("TextButton")
+clearListButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT)
+clearListButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
+clearListButton.Text = "CLEAR COMMAND LIST" 
+clearListButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+clearListButton.Font = Enum.Font.SourceSansBold
+clearListButton.TextSize = 16
+clearListButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Red for clearing action
+clearListButton.Parent = mainPanel
 
 -- Results Frame (List)
 local resultsFrame = Instance.new("ScrollingFrame")
@@ -376,8 +385,9 @@ local function FilterResults(query)
     local filteredList = {}
     local lowerQuery = string.lower(query or "")
     
+    -- If no query, return the full list
     if lowerQuery == "" then
-        return foundRemotes -- Return all if no query
+        return foundRemotes 
     end
     
     for _, remote in ipairs(foundRemotes) do
@@ -393,25 +403,36 @@ local function FilterResults(query)
     return filteredList
 end
 
-local function DisplayResults()
+local function ClearCommandList()
+    -- Only destroy the buttons, keep the UIListLayout
     for _, child in ipairs(resultsFrame:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
+    -- Reset the list height
+    resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
     
-    -- Apply Filter
-    local listToDisplay = FilterResults(currentSearchQuery)
+    UpdateStatus("Command list cleared. Click 'RUN COMMAND HARVESTER' to scan again.", Color3.fromRGB(150, 150, 150))
+end
+
+local function DisplayResults()
+    -- Step 1: Clear the list first (in case of filter)
+    ClearCommandList()
+    
+    -- Step 2: Apply Filter (if needed)
+    local listToDisplay = FilterResults(currentSearchQuery) 
 
     local totalItems = #listToDisplay
     local totalFound = #foundRemotes
 
+    -- Step 3: Handle Zero/Filtered Results
     if totalFound == 0 then
-        -- No commands found
+        -- No commands found at all
         UpdateStatus(string.format("SCAN COMPLETE: Scanned %d instances. Zero callable commands found. This game is highly secured.", instancesScanned), Color3.fromRGB(255, 100, 0))
-    elseif totalItems == 0 then
+    elseif totalItems == 0 and totalFound > 0 then
         -- Commands were found, but none match the filter
         UpdateStatus(string.format("No commands match the filter: '%s'. Total commands found: %d.", currentSearchQuery, totalFound), Color3.fromRGB(255, 165, 0))
     else
-        -- Commands found and/or filtered
+        -- Step 4: Create and display the buttons
         for _, remote in ipairs(listToDisplay) do
             CreateRemoteButton(remote)
         end
@@ -423,12 +444,13 @@ local function DisplayResults()
         UpdateStatus(statusText, Color3.fromRGB(0, 255, 100))
     end
     
-    -- Adjust Canvas Size
+    -- Step 5: Adjust Canvas Size
     local totalHeight = totalItems * 27 
     resultsFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
 end
 
 local function RunRemoteScan()
+    -- Clear internal data before starting the scan
     table.clear(foundRemotes)
     instancesScanned = 0 -- Reset scan counter
     
@@ -440,7 +462,7 @@ local function RunRemoteScan()
     -- Run deep search starting from the game root
     local co = coroutine.wrap(function()
         for _, service in ipairs(SERVICES_TO_SCAN) do
-            DeepSearchForRemotes(service, "game")
+            DeepSearchForRemotes(service, "game") 
         end
     end)
     co()
@@ -458,6 +480,9 @@ end
 harvestButton.MouseButton1Click:Connect(function()
     task.spawn(RunRemoteScan)
 end)
+
+-- Button Connection: Clear List Button
+clearListButton.MouseButton1Click:Connect(ClearCommandList)
 
 -- Connect Search Button and Text Changed
 local function ApplyFilter()
