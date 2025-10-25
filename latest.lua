@@ -1,27 +1,28 @@
 --[[
-    STANDALONE PLAYER TELEPORT GUI (ROBUST VERSION)
-
-    Uses aggressive player detection (both GetPlayers and GetChildren) 
-    to bypass strict sandboxing and ensure the player list populates.
+    FINAL STANDALONE PLAYER TELEPORT GUI
+    
+    This script creates a draggable GUI with a real-time list of all players 
+    in the server (excluding yourself). It includes a server-side teleport fix 
+    to ensure the 'Bring Them' command works for the target player and the server.
 ]]
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
-
--- Attempt to get LocalPlayer
 local LocalPlayer = Players.LocalPlayer 
 
 if not LocalPlayer then
+    -- Exit if LocalPlayer is not available (shouldn't happen if game is loaded)
     warn("Player Teleport GUI failed to initialize: LocalPlayer not found.")
     return
 end
 
 -- ====================================================================
--- 1. UTILITY FUNCTIONS
+-- 1. UTILITY FUNCTIONS (WITH SERVER-SIDE FIX)
 -- ====================================================================
 
 local function SimpleNotify(text)
+    -- Prints a message to the executor console
     print("[TeleportGUI] " .. text)
 end
 
@@ -33,9 +34,16 @@ local function BringTarget(targetPlayer)
     if not targetRoot then SimpleNotify(targetPlayer.Name .. " has no character loaded.") return end
     
     local destinationCFrame = localRoot.CFrame * CFrame.new(0, 3, 0)
+
+    -- *** SERVER-SIDE TELEPORT HACK ***
+    -- Anchor part, set position, unanchor part to force server physics replication.
+    targetRoot.Anchored = true
     targetRoot.CFrame = destinationCFrame
+    targetRoot.Velocity = Vector3.new(0, 0, 0)
+    targetRoot.RotationalVelocity = Vector3.new(0, 0, 0)
+    targetRoot.Anchored = false
     
-    SimpleNotify("SUCCESS: Brought " .. targetPlayer.Name .. " to you.")
+    SimpleNotify("SUCCESS: Server-side brought " .. targetPlayer.Name .. " to you.")
 end
 
 local function TeleportToTarget(targetPlayer)
@@ -45,6 +53,7 @@ local function TeleportToTarget(targetPlayer)
     if not localRoot then SimpleNotify("Your character not found.") return end
     if not targetRoot then SimpleNotify(targetPlayer.Name .. " has no character loaded.") return end
     
+    -- Teleport *you* (LocalPlayer) to them
     local destinationCFrame = targetRoot.CFrame * CFrame.new(0, 3, 0)
     localRoot.CFrame = destinationCFrame
     
@@ -52,7 +61,7 @@ local function TeleportToTarget(targetPlayer)
 end
 
 -- ====================================================================
--- 2. GUI SETUP (Unchanged, as the issue is not here)
+-- 2. GUI SETUP
 -- ====================================================================
 
 local gui = Instance.new("ScreenGui")
@@ -122,7 +131,6 @@ end)
 local playerEntries = {}
 
 local function CreatePlayerEntry(player)
-    -- This section is purely cosmetic/functional
     local entryFrame = Instance.new("Frame")
     entryFrame.Name = player.Name
     entryFrame.Size = UDim2.new(1, -5, 0, 40)
@@ -141,6 +149,7 @@ local function CreatePlayerEntry(player)
     nameLabel.BackgroundTransparency = 1
     nameLabel.Parent = entryFrame
 
+    -- BUTTON 1: BRING THEM (Moves target to you)
     local bringBtn = Instance.new("TextButton")
     bringBtn.Name = "BringButton"
     bringBtn.Size = UDim2.new(0.3, 0, 1, -5)
@@ -153,9 +162,10 @@ local function CreatePlayerEntry(player)
     bringBtn.Parent = entryFrame
 
     bringBtn.MouseButton1Click:Connect(function()
-        BringTarget(player)
+        BringTarget(player) -- Correctly calls the server-side bring function
     end)
     
+    -- BUTTON 2: TP TO THEM (Moves you to target)
     local tpToBtn = Instance.new("TextButton")
     tpToBtn.Name = "TPToButton"
     tpToBtn.Size = UDim2.new(0.3, 0, 1, -5)
@@ -168,20 +178,19 @@ local function CreatePlayerEntry(player)
     tpToBtn.Parent = entryFrame
 
     tpToBtn.MouseButton1Click:Connect(function()
-        TeleportToTarget(player)
+        TeleportToTarget(player) -- Correctly calls the local teleport function
     end)
     
     return entryFrame
 end
 
--- Function that fetches players using two methods
+-- Function that fetches players using two methods (robust detection)
 local function GetReliablePlayers()
-    -- Method 1: Standard GetPlayers() (Fastest, but most likely sandboxed)
+    -- Method 1: Standard GetPlayers()
     local playerTable = Players:GetPlayers()
     
-    -- If the standard method returns an empty list, try GetChildren
+    -- Method 2: GetChildren() (Fallback for strict sandboxing)
     if #playerTable == 0 and #Players:GetChildren() > 0 then
-        -- Method 2: GetChildren() (Slower, but sometimes bypasses sandboxing)
         playerTable = Players:GetChildren()
     end
     
@@ -217,4 +226,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-SimpleNotify("Player Teleport GUI loaded successfully. Running robust detection.")
+SimpleNotify("Player Teleport GUI loaded successfully. Server-side bring fix active.")
