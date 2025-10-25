@@ -1,10 +1,12 @@
 --[[
-    UNIVERSAL SINGLE-CLICK EXECUTOR v9 (HYBRID) - HARVEST BUTTON CLARIFIED
+    UNIVERSAL SINGLE-CLICK EXECUTOR v9 - FINAL HARVEST BUTTON FIX
     
-    1. Primary button is now clearly labeled "RUN COMMAND HARVESTER".
+    This version ensures the primary button is clearly labeled, positioned correctly, 
+    and incorporates all confirmed requirements:
+    1. Primary button is clearly labeled "RUN COMMAND HARVESTER".
     2. Executes the command INSTANTLY upon clicking the list button using ZERO ARGUMENTS ({}).
     3. Includes Minimize and Search/Filter functionality.
-    4. Set to a larger height (500px) to display maximum results.
+    4. Set to stable 500px height to reliably display results.
 ]]
 
 local Game = game
@@ -14,7 +16,7 @@ local HttpService = Game:GetService("HttpService")
 
 -- Configuration Constants
 local FULL_WIDTH = 450 
-local FULL_HEIGHT = 500 -- Height to show more results
+local FULL_HEIGHT = 500 -- Stable height
 local MIN_HEIGHT = 30
 local isMinimized = false
 local currentSearchQuery = "" -- Search query state
@@ -189,7 +191,7 @@ mainPanel.Size = UDim2.new(1, -10, 1, -35)
 mainPanel.Position = UDim2.new(0, 5, 0, 35) 
 mainPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 mainPanel.Parent = frame
-mainPanel.ZIndex = 2 
+mainPanel.ZIndex = 2 -- Ensure it sits above the frame background
 
 -- CALCULATE Y POSITIONS
 local yPos = CONTROL_Y_START
@@ -201,6 +203,7 @@ end
 
 -- HARVEST BUTTON (The "Run Command Harvester" button)
 local harvestButton = Instance.new("TextButton")
+harvestButton.Name = "HarvestButton"
 harvestButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT) 
 harvestButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT)) 
 harvestButton.Text = "RUN COMMAND HARVESTER" -- CLARIFIED LABEL
@@ -209,6 +212,7 @@ harvestButton.Font = Enum.Font.SourceSansBold
 harvestButton.TextSize = 16
 harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255) 
 harvestButton.Parent = mainPanel
+harvestButton.ZIndex = 3 -- Ensure it is visible
 
 -- Search Input Box
 local searchBox = Instance.new("TextBox")
@@ -267,7 +271,7 @@ statusOutputYOffset = yPos -- Capture current Y for text box positioning
 local statusOutput = Instance.new("TextBox")
 statusOutput.Size = UDim2.new(1, -10, 0, STATUS_OUTPUT_HEIGHT) 
 statusOutput.Position = UDim2.new(0, 5, 0, statusOutputYOffset) 
-statusOutput.Text = "Click 'RUN COMMAND HARVESTER' to start harvesting. Once found, click any command to fire it with zero arguments."
+statusOutput.Text = "Click 'RUN COMMAND HARVESTER' to start scanning. Once found, click any command to fire it with zero arguments."
 statusOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 statusOutput.Font = Enum.Font.SourceSans
 statusOutput.TextSize = 12 
