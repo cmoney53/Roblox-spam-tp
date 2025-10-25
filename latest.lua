@@ -1,88 +1,64 @@
 --[[
-    PLAYER TELEPORT GUI - VERSION 2.0 (MAXIMUM SERVER-SIDE FORCE)
+    PLAYER TELEPORT GUI - VERSION 3.0 (ULTRA-AGGRESSIVE CHARACTER SWAP)
     
-    This script implements a multi-phase attack in the 'BringTarget' function 
-    to bypass robust anti-exploit measures and force a server-side teleport.
+    This version implements the "Character Swap" technique inside BringTarget 
+    to temporarily take control of the target's physics and force a server-accepted teleport.
 ]]
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer 
+local Workspace = game:GetService("Workspace")
 
 if not LocalPlayer then return end
 
 -- ====================================================================
--- 1. UTILITY FUNCTIONS (SERVER-SIDE FORCE 2.0)
+-- 1. UTILITY FUNCTIONS (SERVER-SIDE FORCE 3.0)
 -- ====================================================================
 
 local function SimpleNotify(text)
-    -- Prints a message to the executor console
     print("[TeleportGUI] " .. text)
 end
 
--- Function to find RemoteEvents with common names throughout the game instance
-local function FindRemoteEvent(name)
-    local success, result = pcall(function()
-        return game:FindFirstChild(name, true)
-    end)
-    return success and result and result:IsA("RemoteEvent") and result
-end
-
+-- Function for the ultimate server-side bring attempt
 local function BringTarget(targetPlayer)
     local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
-    local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild('HumanoidRootPart')
-    local targetHumanoid = targetPlayer.Character and targetPlayer.Character:FindFirstChild('Humanoid')
+    local targetCharacter = targetPlayer.Character
+    local targetRoot = targetCharacter and targetCharacter:FindFirstChild('HumanoidRootPart')
 
-    if not localRoot or not targetRoot or not targetHumanoid then
+    if not localRoot or not targetCharacter or not targetRoot then
         SimpleNotify("Character data not fully found for " .. targetPlayer.Name .. ".") 
         return
     end
     
-    -- Calculate the destination CFrame (3 studs above your head)
     local newCFrame = localRoot.CFrame * CFrame.new(0, 3, 0)
+    SimpleNotify("Attempting Character Swap Bring on " .. targetPlayer.Name .. "...")
 
-    SimpleNotify("Attempting Multi-Phase Bring on " .. targetPlayer.Name .. "...")
-
-    -- PHASE 1: NETWORK OWNERSHIP HIJACK (Aggressive, often patched)
-    -- Temporarily steal network ownership to make the server trust our position update.
+    -- PHASE 1: PREPARE AND LOCK PHYSICS
     targetRoot:SetNetworkOwner(nil) -- Clear old owner
-    targetRoot:SetNetworkOwner(LocalPlayer) -- Set to local player
-
-    -- PHASE 2: AGGRESSIVE LOCAL WARP AND PHYSICS LOCK
-    targetRoot.CFrame = newCFrame
-    targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-    targetRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-    targetHumanoid.PlatformStand = true -- Lock target movement
-    wait(0.05) -- Brief pause for physics update
-
-    -- PHASE 3: REMOTE EVENT SPOOFING (Most likely to succeed)
-    local remote = FindRemoteEvent("RemoteTeleport") or 
-                   FindRemoteEvent("SetPosition") or 
-                   FindRemoteEvent("MoveTo") or
-                   FindRemoteEvent("UpdateCharacter")
     
-    if remote then
-        pcall(function()
-            -- Fire the event with the new position, making it look like a valid request
-            remote:FireServer(targetPlayer, targetRoot, newCFrame) 
-        end)
-        SimpleNotify("Executed Remote Spoof via: " .. remote.Name)
-    end
-    
-    -- PHASE 4: FORCED STATE SYNCHRONIZATION
-    -- Force a state change that makes the server re-evaluate the character's position.
+    -- PHASE 2: CHARACTER SWAP/HIJACK
     pcall(function()
-        targetHumanoid.Sit = true
-        wait(0.1)
-        targetHumanoid.Sit = false
+        -- 2a. Temporarily set the target's parent to an object on our client (Backpack)
+        -- This forces our client to temporarily gain full physics ownership.
+        targetCharacter.Parent = LocalPlayer.Backpack 
+        
+        -- 2b. Aggressively set the CFrame while on our client
+        targetRoot.CFrame = newCFrame
+        targetRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        targetRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        wait(0.01)
+        
+        -- 2c. Move the character back to the workspace
+        targetCharacter.Parent = Workspace 
     end)
-    targetHumanoid.PlatformStand = false -- Release movement lock
-
-    -- PHASE 5: RELEASE OWNERSHIP (Essential for them to regain control)
-    targetRoot:SetNetworkOwner(targetPlayer) 
     
-    SimpleNotify("COMPLETED: Multi-Phase Server Bring executed on " .. targetPlayer.Name .. ".")
+    -- PHASE 3: FINAL SYNCHRONIZATION AND OWNERSHIP RESTORE
+    targetRoot.CFrame = newCFrame -- Set one last time for good measure
+    targetRoot:SetNetworkOwner(targetPlayer) -- Restore original owner
+    
+    SimpleNotify("COMPLETED: Character Swap executed on " .. targetPlayer.Name .. ". Check the server now.")
 end
 
 local function TeleportToTarget(targetPlayer)
@@ -121,7 +97,7 @@ mainFrame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Name = "TitleBar"
 title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "Player Teleport Menu (2.0)"
+title.Text = "Player Teleport Menu (3.0)"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
@@ -255,4 +231,5 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-SimpleNotify("Player Teleport GUI 2.0 loaded. Aggressive Server-Side Bring activated.")
+SimpleNotify("Player Teleport GUI 3.0 loaded. Character Swap Attack deployed.")
+
