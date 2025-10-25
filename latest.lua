@@ -1,370 +1,393 @@
 --[[
-=========================================================
-       DUAL-PANEL HARVESTER & EXECUTOR (FINAL SCRIPT)
-=========================================================
+    DUAL-PANEL HARVESTER & EXECUTOR: The final, all-in-one tool.
+    
+    Left Panel: Universal Code Harvester
+    - Scans the entire game for suspicious RemoteEvents and other callable functions.
+    
+    Right Panel: Remote Executor
+    - Allows you to select a remote from the left, set a target, and fire the final "Bring" exploit script.
+    
+    This is designed to bypass strong anti-exploits by finding and abusing the game's own developer-made commands.
+]]
 
-This script combines the deep remote event scanner (Harvester)
-with a dedicated execution panel (Executor) to find and use
-vulnerable server commands to bring a target player.
---]]
-
-local Players = game:GetService("Players")
+local Game = game
+local Players = Game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
+local RunService = Game:GetService("RunService")
+local CoreGui = Game:GetService("CoreGui")
+local ReplicatedStorage = Game:GetService("ReplicatedStorage")
+local HttpService = Game:GetService("HttpService") -- Used for its UUID function (better than os.clock() for unique IDs)
+local SUSPICIOUS_KEYWORDS = {
+    "teleport", "tp", "move", "position", "warp", "goto", "cframe", 
+    "admin", "kick", "ban", "kill", "respawn", "damage", "health", 
+    "command", "server", "setprop", "property", "override",
+    "item", "inventory", "stat", "update", "value", "setvalue", 
+    "char", "character", "load", "save", "debug", "test", "dev"
+}
+local SERVICES_TO_SCAN = {
+    Game:GetService("Workspace"), Game:GetService("ReplicatedStorage"), 
+    Game:GetService("ReplicatedFirst"), Game:GetService("StarterGui"),
+    Game:GetService("StarterPlayer"):FindFirstChild("StarterCharacterScripts"),
+    Game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts"),
+    Game:GetService("Lighting"), Game:GetService("SoundService"),
+    Game
+}
+local foundRemotes = {}
 
--- Shared State
-local TargetPathTextBox = nil
-local TargetPlayerTextBox = nil
-local StatusLabel = nil
-
--- =========================================================
--- 1. HARVESTER LOGIC (Remote Scanner)
--- =========================================================
-
-local function is_suspicious(name)
-    local lower_name = name:lower()
-    return lower_name:find("teleport") or
-           lower_name:find("tp") or
-           lower_name:find("admin") or
-           lower_name:find("kill") or
-           lower_name:find("warp") or
-           lower_name:find("kick") or
-           lower_name:find("force") or
-           lower_name:find("move")
+-- Utility to log to the console
+local function Log(text)
+    print("--- [DUAL HACKER] " .. text)
 end
 
-local function deep_scan(parent, path_parts, results)
-    if #path_parts > 8 then return end -- Prevent infinite loops/depth explosion
+-- Function to check if an instance is a callable remote/bindable object
+local function IsCallableObject(instance)
+    return instance:IsA("RemoteEvent") or 
+           instance:IsA("RemoteFunction") or
+           instance:IsA("BindableEvent") or
+           instance:IsA("BindableFunction")
+end
 
-    for _, child in ipairs(parent:GetChildren()) do
-        local new_path_parts = {table.unpack(path_parts), child.Name}
-        local current_path = table.concat(new_path_parts, ".")
+-- Recursive function to search for all callable objects matching keywords
+local function DeepSearchForRemotes(instance, path)
+    if not instance then return end
 
-        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-            if is_suspicious(child.Name) then
-                table.insert(results, {
-                    Name = child.Name,
-                    Type = child.ClassName,
-                    Path = current_path
-                })
+    if IsCallableObject(instance) then
+        local instancePath = path .. "." .. instance.Name
+        local lowerName = string.lower(instance.Name)
+        
+        local categories = {}
+        for _, keyword in ipairs(SUSPICIOUS_KEYWORDS) do
+            if string.find(lowerName, keyword) then
+                table.insert(categories, keyword)
             end
         end
-        
-        -- Recursively check containers, but ignore character models and large instances
-        if child:IsA("Folder") or child:IsA("Part") or child:IsA("Model") or child:IsA("Configuration") or child:IsA("ScreenGui") then
-             if not child:IsA("Model") or child ~= LocalPlayer.Character then -- Avoid scanning character parts
-                deep_scan(child, new_path_parts, results)
-             end
+
+        if #categories > 0 then
+            table.insert(foundRemotes, {
+                Name = instance.Name, 
+                Path = instancePath, 
+                Type = instance.ClassName,
+                Categories = categories,
+                ID = HttpService:GenerateGUID(false) -- Unique ID for lookup
+            })
+        end
+    end
+
+    -- Recurse through children, limiting depth/size
+    for _, child in ipairs(instance:GetChildren()) do
+        if #child:GetChildren() < 1000 and 
+           not child:IsA("Configuration") and
+           not child:IsA("MaterialService") and 
+           not child:IsA("LocalizationService")
+        then
+            DeepSearchForRemotes(child, path .. "." .. child.Name)
         end
     end
 end
 
+-- ====================================================================
+-- GUI CONSTRUCTION
+-- ====================================================================
 
--- =========================================================
--- 2. EXECUTOR LOGIC (Command Runner)
--- =========================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DualPanelHacker"
+screenGui.Parent = CoreGui
 
-local function getRemoteByPath(path_string)
-    local parts = path_string:split(".")
-    local current = game
-    for i, part in ipairs(parts) do
-        if i == 1 then continue end -- Skip 'game'
-        if current then
-            current = current:FindFirstChild(part)
-        else
-            return nil
-        end
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 780, 0, 500) -- Wide frame for two panels
+frame.Position = UDim2.new(0.5, -390, 0.5, -250)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+frame.BorderSizePixel = 2
+frame.BorderColor3 = Color3.fromRGB(15, 15, 15)
+frame.Active = true
+frame.Draggable = true
+frame.Parent = screenGui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Text = "Dual-Panel Remote Harvester & Executor"
+title.TextColor3 = Color3.fromRGB(255, 100, 0)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+title.Parent = frame
+
+-- LEFT PANEL: HARVESTER
+local harvestPanel = Instance.new("Frame")
+harvestPanel.Size = UDim2.new(0.5, -10, 1, -40)
+harvestPanel.Position = UDim2.new(0, 5, 0, 35)
+harvestPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+harvestPanel.Parent = frame
+
+local harvestTitle = title:Clone()
+harvestTitle.Name = "HarvestTitle"
+harvestTitle.Text = "STEP 1: COMMAND HARVESTER"
+harvestTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
+harvestTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+harvestTitle.Parent = harvestPanel
+
+local harvestButton = Instance.new("TextButton")
+harvestButton.Size = UDim2.new(1, -10, 0, 40)
+harvestButton.Position = UDim2.new(0, 5, 0, 35)
+harvestButton.Text = "RUN ULTIMATE HARVEST"
+harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+harvestButton.Font = Enum.Font.SourceSansBold
+harvestButton.TextSize = 18
+harvestButton.BackgroundColor3 = Color3.fromRGB(130, 0, 255)
+harvestButton.Parent = harvestPanel
+
+local resultsFrame = Instance.new("ScrollingFrame")
+resultsFrame.Size = UDim2.new(1, -10, 1, -110)
+resultsFrame.Position = UDim2.new(0, 5, 0, 80)
+resultsFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+resultsFrame.BorderSizePixel = 0
+resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+resultsFrame.ScrollBarThickness = 6
+resultsFrame.Parent = harvestPanel
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.FillDirection = Enum.FillDirection.Vertical
+listLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 2)
+listLayout.Parent = resultsFrame
+
+-- RIGHT PANEL: EXECUTOR
+local execPanel = Instance.new("Frame")
+execPanel.Size = UDim2.new(0.5, -10, 1, -40)
+execPanel.Position = UDim2.new(0.5, 5, 0, 35)
+execPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+execPanel.Parent = frame
+
+local execTitle = title:Clone()
+execTitle.Name = "ExecutorTitle"
+execTitle.Text = "STEP 2: REMOTE EXECUTOR"
+execTitle.TextColor3 = Color3.fromRGB(255, 255, 100)
+execTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+execTitle.Parent = execPanel
+
+local pathBox = Instance.new("TextBox")
+pathBox.Size = UDim2.new(1, -10, 0, 30)
+pathBox.Position = UDim2.new(0, 5, 0, 35)
+pathBox.PlaceholderText = "Path of RemoteEvent (e.g., game.RbltSrv.TeleportEvent)"
+pathBox.Text = "" -- Will be populated on click
+pathBox.Font = Enum.Font.SourceSans
+pathBox.TextSize = 14
+pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+pathBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+pathBox.Parent = execPanel
+pathBox.TextEditable = false -- Read-only once a path is selected
+
+local targetBox = pathBox:Clone()
+targetBox.Size = UDim2.new(1, -10, 0, 30)
+targetBox.Position = UDim2.new(0, 5, 0, 70)
+targetBox.PlaceholderText = "Target Player Name"
+targetBox.Text = LocalPlayer.Name == "Player1" and "Player2" or "Player1" -- Placeholder target
+targetBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+targetBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+targetBox.TextEditable = true
+targetBox.Parent = execPanel
+
+local execButton = harvestButton:Clone()
+execButton.Size = UDim2.new(1, -10, 0, 40)
+execButton.Position = UDim2.new(0, 5, 0, 105)
+execButton.Text = "ATTEMPT FINAL BRING"
+execButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+execButton.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
+execButton.Parent = execPanel
+
+local execOutput = Instance.new("TextLabel")
+execOutput.Size = UDim2.new(1, -10, 1, -155)
+execOutput.Position = UDim2.new(0, 5, 0, 150)
+execOutput.Text = "Select a command on the left to begin."
+execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
+execOutput.Font = Enum.Font.SourceSans
+execOutput.TextSize = 16
+execOutput.TextWrapped = true
+execOutput.TextXAlignment = Enum.TextXAlignment.Left
+execOutput.TextYAlignment = Enum.TextYAlignment.Top
+execOutput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+execOutput.Parent = execPanel
+
+-- ====================================================================
+-- HARVESTER LOGIC (LEFT PANEL)
+-- ====================================================================
+
+local function CreateRemoteButton(remoteData)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 25)
+    btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    btn.BorderColor3 = Color3.fromRGB(15, 15, 15)
+    btn.BorderSizePixel = 1
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 14
+    
+    local nameColor = remoteData.Type == "RemoteEvent" and "#FFC04D" or "#4DFFFF" -- Yellow/Cyan
+    local matchText = table.concat(remoteData.Categories, ", ")
+
+    btn.Text = string.format("  <font color='%s'>%s</font> | %s | Matches: %s", 
+        nameColor, 
+        remoteData.Name, 
+        remoteData.Type:sub(1,1), -- Use abbreviation E/F/BE/BF
+        matchText
+    )
+    btn.RichText = true
+    btn.Parent = resultsFrame
+
+    -- On Click, populate the executor panel
+    btn.MouseButton1Click:Connect(function()
+        pathBox.Text = remoteData.Path
+        pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        execOutput.Text = string.format("Selected command: %s\nType: %s\nPath: %s\n\nReady to fire. Make sure '%s' is the correct target.", 
+            remoteData.Name, 
+            remoteData.Type, 
+            remoteData.Path, 
+            targetBox.Text
+        )
+        execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
+    end)
+    
+    return btn
+end
+
+local function DisplayResults()
+    for _, child in ipairs(resultsFrame:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+
+    if #foundRemotes == 0 then
+        execOutput.Text = "No suspicious commands found. Security is extremely high."
+        resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        return
+    end
+
+    for _, remote in ipairs(foundRemotes) do
+        CreateRemoteButton(remote)
+    end
+    
+    local totalHeight = #foundRemotes * 27 
+    resultsFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+    
+    Log(string.format("HARVEST COMPLETE: %d commands found.", #foundRemotes))
+    execOutput.Text = string.format("HARVEST COMPLETE: %d commands found. Scroll the left list and click one to select it.", #foundRemotes)
+    execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
+end
+
+local function RunRemoteScan()
+    table.clear(foundRemotes)
+    Log("Starting ULTIMATE CODE HARVEST...")
+    
+    harvestButton.Text = "HARVESTING..."
+    harvestButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    
+    for _, service in ipairs(SERVICES_TO_SCAN) do
+        DeepSearchForRemotes(service, "game." .. (service and service.Name or "nil"))
+    end
+    
+    DisplayResults()
+    
+    harvestButton.Text = "RE-RUN ULTIMATE HARVEST"
+    harvestButton.BackgroundColor3 = Color3.fromRGB(130, 0, 255)
+end
+
+harvestButton.MouseButton1Click:Connect(function()
+    task.spawn(RunRemoteScan)
+end)
+
+-- ====================================================================
+-- EXECUTOR LOGIC (RIGHT PANEL)
+-- ====================================================================
+
+local function FindInstanceByPath(path)
+    -- This function converts "game.ReplicatedStorage.Remote" into the actual instance
+    local parts = string.split(path, ".")
+    local current = Game
+    for i = 2, #parts do -- Start at 2 to skip "game"
+        if not current then return nil end
+        current = current:FindFirstChild(parts[i])
     end
     return current
 end
 
-local function BringTarget(remotePath, targetName)
-    local remote = getRemoteByPath(remotePath)
-    local target = Players:FindFirstChild(targetName)
-    local rootPart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+execButton.MouseButton1Click:Connect(function()
+    local path = pathBox.Text
+    local targetName = targetBox.Text
     
-    if not remote then
-        StatusLabel.Text = "ERROR: Remote not found at path!"
+    if path == "" or path == pathBox.PlaceholderText then
+        execOutput.Text = "Error: Please select a command on the left first."
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
-    if not target then
-        StatusLabel.Text = "ERROR: Target player not found!"
-        return
-    end
-    if not rootPart then
-        StatusLabel.Text = "ERROR: Your character not found!"
+    if targetName == "" then
+        execOutput.Text = "Error: Please enter a target player's name."
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
     
-    local playerPos = rootPart.Position + Vector3.new(0, 5, 0)
-
-    -- Attempt 1: Player Object, Target Position
-    pcall(function()
-        remote:FireServer(target, playerPos)
-        StatusLabel.Text = "Attempt 1 Fired (Target, Position)"
-    end)
-    task.wait(0.1)
-
-    -- Attempt 2: Target Name, Target Position
-    pcall(function()
-        remote:FireServer(target.Name, playerPos)
-        StatusLabel.Text = "Attempt 2 Fired (Name, Position)"
-    end)
-    task.wait(0.1)
-
-    -- Attempt 3: Just Target Name (for common admin scripts)
-    pcall(function()
-        remote:FireServer(target.Name, "teleport", playerPos)
-        StatusLabel.Text = "Attempt 3 Fired (Name, Command, Position)"
-    end)
-end
-
-
--- =========================================================
--- 3. GUI CREATION
--- =========================================================
-
--- Cleanup existing GUI
-local function Cleanup(name)
-    local existing = CoreGui:FindFirstChild(name)
-    if existing then existing:Destroy() end
-end
-Cleanup("Dual_Panel_Exploit_GUI")
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "Dual_Panel_Exploit_GUI"
-ScreenGui.Parent = CoreGui
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 700, 0, 400)
-MainFrame.Position = UDim2.new(0.5, -350, 0.5, -200)
-MainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
-
--- Title Bar (for dragging)
-local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 25)
-TitleBar.BackgroundColor3 = Color3.new(0.2, 0.2, 0.3)
-TitleBar.Parent = MainFrame
-
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "DUAL-PANEL HARVESTER & EXECUTOR"
-TitleLabel.Font = Enum.Font.SourceSansBold
-TitleLabel.TextSize = 18
-TitleLabel.TextColor3 = Color3.new(1, 1, 1)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Size = UDim2.new(1, -25, 1, 0)
-TitleLabel.Position = UDim2.new(0, 0, 0, 0)
-TitleLabel.Parent = TitleBar
-
-local CloseButton = Instance.new("TextButton")
-CloseButton.Size = UDim2.new(0, 25, 1, 0)
-CloseButton.Position = UDim2.new(1, -25, 0, 0)
-CloseButton.Text = "X"
-CloseButton.TextColor3 = Color3.new(1, 1, 1)
-CloseButton.BackgroundColor3 = Color3.new(0.8, 0.2, 0.2)
-CloseButton.Parent = TitleBar
-CloseButton.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
-
--- Draggable functionality
-local drag = false
-local offset = Vector2.new(0, 0)
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        drag = true
-        offset = input.Position - MainFrame.AbsolutePosition
-        TitleBar.BackgroundColor3 = Color3.new(0.3, 0.3, 0.4)
-    end
-end)
-TitleBar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        drag = false
-        TitleBar.BackgroundColor3 = Color3.new(0.2, 0.2, 0.3)
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if drag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        MainFrame.Position = UDim2.fromOffset(input.Position.X - offset.X, input.Position.Y - offset.Y)
-    end
-end)
-
-
--- =================== LEFT PANEL (HARVESTER) ===================
-local LeftPanel = Instance.new("Frame")
-LeftPanel.Size = UDim2.new(0.5, 0, 1, -25)
-LeftPanel.Position = UDim2.new(0, 0, 0, 25)
-LeftPanel.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-LeftPanel.Parent = MainFrame
-
-local ScanButton = Instance.new("TextButton")
-ScanButton.Size = UDim2.new(1, -10, 0, 30)
-ScanButton.Position = UDim2.new(0, 5, 0, 5)
-ScanButton.Text = "RUN ULTIMATE HARVEST"
-ScanButton.BackgroundColor3 = Color3.new(0.5, 0.2, 0.8)
-ScanButton.TextColor3 = Color3.new(1, 1, 1)
-ScanButton.Font = Enum.Font.SourceSansBold
-ScanButton.TextSize = 16
-ScanButton.Parent = LeftPanel
-
-local ScrollFrame = Instance.new("ScrollingFrame")
-ScrollFrame.Size = UDim2.new(1, -10, 1, -45)
-ScrollFrame.Position = UDim2.new(0, 5, 0, 40)
-ScrollFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollFrame.ScrollBarThickness = 6
-ScrollFrame.Parent = LeftPanel
-
-local ListLayout = Instance.new("UIListLayout")
-ListLayout.Padding = UDim.new(0, 2)
-ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ListLayout.Parent = ScrollFrame
-
-local function CreateResultEntry(data, y_offset)
-    local EntryButton = Instance.new("TextButton")
-    EntryButton.Size = UDim2.new(1, 0, 0, 20)
-    EntryButton.TextXAlignment = Enum.TextXAlignment.Left
-    EntryButton.Text = string.format(" [%s] %s", data.Type:sub(1, 3), data.Name)
-    EntryButton.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-    EntryButton.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-    EntryButton.TextSize = 14
-    EntryButton.Font = Enum.Font.SourceSans
-    EntryButton.Parent = ScrollFrame
-    EntryButton.LayoutOrder = y_offset
-
-    EntryButton.MouseButton1Click:Connect(function()
-        if TargetPathTextBox then
-            TargetPathTextBox.Text = data.Path
-            StatusLabel.Text = "Path Loaded: " .. data.Path
-        end
-    end)
-end
-
-local function PopulateResults(results)
-    for _, child in ipairs(ScrollFrame:GetChildren()) do
-        if child:IsA("TextButton") then child:Destroy() end
-    end
-    local y_offset = 0
-    for _, data in ipairs(results) do
-        CreateResultEntry(data, y_offset)
-        y_offset = y_offset + 1
-    end
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, #results * 22) -- 20 height + 2 padding
-end
-
-ScanButton.MouseButton1Click:Connect(function()
-    local results = {}
-    ScanButton.Text = "SCANNING..."
-    ScanButton.BackgroundColor3 = Color3.new(0.8, 0.5, 0.2)
-    StatusLabel.Text = "Scanning game for suspicious remote events/functions..."
-
-    -- Scan main service containers
-    deep_scan(ReplicatedStorage, {"game", "ReplicatedStorage"}, results)
-    deep_scan(game:GetService("Workspace"), {"game", "Workspace"}, results)
-    deep_scan(game:GetService("Lighting"), {"game", "Lighting"}, results)
-    
-    PopulateResults(results)
-    
-    ScanButton.Text = "RUN ULTIMATE HARVEST (COMPLETE)"
-    ScanButton.BackgroundColor3 = Color3.new(0.2, 0.6, 0.2)
-    StatusLabel.Text = string.format("HARVEST COMPLETE: Found %d suspicious remotes.", #results)
-end)
-
--- =================== RIGHT PANEL (EXECUTOR) ===================
-local RightPanel = Instance.new("Frame")
-RightPanel.Size = UDim2.new(0.5, 0, 1, -25)
-RightPanel.Position = UDim2.new(0.5, 0, 0, 25)
-RightPanel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-RightPanel.Parent = MainFrame
-
--- Remote Path Text Box
-local PathLabel = Instance.new("TextLabel")
-PathLabel.Size = UDim2.new(1, -10, 0, 20)
-PathLabel.Position = UDim2.new(0, 5, 0, 5)
-PathLabel.Text = "REMOTE PATH (Click left panel to load)"
-PathLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-PathLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-PathLabel.Font = Enum.Font.SourceSansBold
-PathLabel.TextSize = 14
-PathLabel.TextXAlignment = Enum.TextXAlignment.Left
-PathLabel.Parent = RightPanel
-
-TargetPathTextBox = Instance.new("TextBox")
-TargetPathTextBox.Size = UDim2.new(1, -10, 0, 25)
-TargetPathTextBox.Position = UDim2.new(0, 5, 0, 25)
-TargetPathTextBox.PlaceholderText = "e.g., game.ReplicatedStorage.RemoteEvents.TeleportPlayerEvent"
-TargetPathTextBox.Text = ""
-TargetPathTextBox.TextColor3 = Color3.new(1, 1, 1)
-TargetPathTextBox.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-TargetPathTextBox.Font = Enum.Font.SourceSans
-TargetPathTextBox.TextSize = 14
-TargetPathTextBox.Parent = RightPanel
-
--- Target Player Text Box
-local TargetLabel = Instance.new("TextLabel")
-TargetLabel.Size = UDim2.new(1, -10, 0, 20)
-TargetLabel.Position = UDim2.new(0, 5, 0, 60)
-TargetLabel.Text = "TARGET PLAYER NAME"
-TargetLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-TargetLabel.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-TargetLabel.Font = Enum.Font.SourceSansBold
-TargetLabel.TextSize = 14
-TargetLabel.TextXAlignment = Enum.TextXAlignment.Left
-TargetLabel.Parent = RightPanel
-
-TargetPlayerTextBox = Instance.new("TextBox")
-TargetPlayerTextBox.Size = UDim2.new(1, -10, 0, 25)
-TargetPlayerTextBox.Position = UDim2.new(0, 5, 0, 80)
-TargetPlayerTextBox.PlaceholderText = "e.g., 'TargetPlayerName'"
-TargetPlayerTextBox.Text = ""
-TargetPlayerTextBox.TextColor3 = Color3.new(1, 1, 1)
-TargetPlayerTextBox.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-TargetPlayerTextBox.Font = Enum.Font.SourceSans
-TargetPlayerTextBox.TextSize = 14
-TargetPlayerTextBox.Parent = RightPanel
-
--- Execution Button
-local ExecuteButton = Instance.new("TextButton")
-ExecuteButton.Size = UDim2.new(1, -10, 0, 40)
-ExecuteButton.Position = UDim2.new(0, 5, 0, 120)
-ExecuteButton.Text = "ATTEMPT FINAL BRING (3 PARAMETER COMBOS)"
-ExecuteButton.BackgroundColor3 = Color3.new(0.9, 0.1, 0.1)
-ExecuteButton.TextColor3 = Color3.new(1, 1, 1)
-ExecuteButton.Font = Enum.Font.SourceSansBold
-ExecuteButton.TextSize = 16
-ExecuteButton.Parent = RightPanel
-
-ExecuteButton.MouseButton1Click:Connect(function()
-    local remotePath = TargetPathTextBox.Text
-    local targetName = TargetPlayerTextBox.Text
-    if remotePath == "" or targetName == "" then
-        StatusLabel.Text = "ERROR: Both Remote Path and Target Player Name must be filled."
+    local Target = Players:FindFirstChild(targetName)
+    if not Target then
+        execOutput.Text = "Error: Target player '" .. targetName .. "' not found."
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
-    ExecuteButton.Text = "ATTEMPTING..."
-    ExecuteButton.BackgroundColor3 = Color3.new(0.8, 0.5, 0.2)
-    BringTarget(remotePath, targetName)
-    ExecuteButton.Text = "ATTEMPT FINAL BRING (3 PARAMETER COMBOS)"
-    ExecuteButton.BackgroundColor3 = Color3.new(0.9, 0.1, 0.1)
+
+    local Remote = FindInstanceByPath(path)
+    if not Remote or (not Remote:IsA("RemoteEvent") and not Remote:IsA("RemoteFunction")) then
+        execOutput.Text = "Error: Path does not lead to a valid RemoteEvent/Function."
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+
+    local MyRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not MyRoot then
+        execOutput.Text = "Error: Your character's HumanoidRootPart not found."
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+
+    local MyCFrame = MyRoot.CFrame
+    
+    execOutput.Text = string.format("Attempting to fire: %s\nTarget: %s\nTrying parameter combinations...", Remote.Name, targetName)
+    execOutput.TextColor3 = Color3.fromRGB(255, 165, 0)
+    
+    local success = false
+    
+    -- Attempt 1: TargetPlayer, DestinationCFrame (Most common 'Bring' signature)
+    local s1, e1 = pcall(function() Remote:FireServer(Target, MyCFrame) end)
+    if s1 and not e1 then success = true end
+
+    -- Attempt 2: TargetPlayer only (Server pulls CFrame automatically)
+    if not success then
+        local s2, e2 = pcall(function() Remote:FireServer(Target) end)
+        if s2 and not e2 then success = true end
+    end
+    
+    -- Attempt 3: DestinationCFrame only (Remote assumes LocalPlayer is target)
+    if not success then
+        local s3, e3 = pcall(function() Remote:FireServer(MyCFrame) end)
+        if s3 and not e3 then success = true end
+    end
+
+    -- Attempt 4: CFrame, TargetPlayer (Less common, but seen in some custom admins)
+    if not success then
+        local s4, e4 = pcall(function() Remote:FireServer(MyCFrame, Target) end)
+        if s4 and not e4 then success = true end
+    end
+
+    -- Attempt 5: No Arguments (Remote expects the server to figure it out)
+    if not success then
+        local s5, e5 = pcall(function() Remote:FireServer() end)
+        if s5 and not e5 then success = true end
+    end
+
+
+    -- Final Report
+    if success then
+        execOutput.Text = "SUCCESS! Remote fired. Check if " .. targetName .. " has moved!"
+        execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
+    else
+        execOutput.Text = "FAILURE. Remote failed to fire or was rejected by the server. Try a different command on the left."
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
+    end
 end)
-
-
--- =================== STATUS BAR (Shared) ===================
-local StatusBar = Instance.new("Frame")
-StatusBar.Size = UDim2.new(1, 0, 0, 20)
-StatusBar.Position = UDim2.new(0, 0, 1, -20)
-StatusBar.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
-StatusBar.Parent = MainFrame
-
-StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(1, 0, 1, 0)
-StatusLabel.Text = "Ready. Click 'RUN ULTIMATE HARVEST' to start scanning."
-StatusLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
-StatusLabel.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
-StatusLabel.Font = Enum.Font.SourceSans
-StatusLabel.TextSize = 14
-StatusLabel.Parent = StatusBar
-
-print("Dual-Panel Harvester & Executor GUI Script Loaded.")
