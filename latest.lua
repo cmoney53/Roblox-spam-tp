@@ -1,11 +1,8 @@
 --[[
     UNIVERSAL REMOTE COMMANDER: The final, flexible tool.
     
-    Left Panel: Universal Code Harvester
-    - Scans the entire game for callable RemoteEvents/Functions and stores a direct reference to the object.
-    
-    Right Panel: Remote Commander
-    - Uses the stored object reference to fire the remote, avoiding path lookup errors.
+    This version includes the direct object reference fix for guaranteed execution
+    and improved guidance for debugging arguments (the "nil" result problem).
 ]]
 
 local Game = game
@@ -28,7 +25,7 @@ local SERVICES_TO_SCAN = {
     Game
 }
 local foundRemotes = {}
-local selectedRemoteObject = nil -- New global to store the actual object reference
+local selectedRemoteObject = nil -- Stores the actual object reference
 
 -- Utility to log to the console
 local function Log(text)
@@ -64,7 +61,6 @@ local function DeepSearchForRemotes(instance, path)
                 Path = instancePath, 
                 Type = instance.ClassName,
                 Categories = categories,
-                -- *** CRITICAL CHANGE: Store the actual Instance Object ***
                 Instance = instance 
             })
         end
@@ -190,22 +186,35 @@ pathBox.TextEditable = false
 -- Arguments Box
 local argsLabel = pathLabel:Clone()
 argsLabel.Position = UDim2.new(0, 5, 0, 85)
-argsLabel.Text = "Arguments (use commas to separate, e.g., 'TargetPlayerName, 100, true')"
+argsLabel.Text = "Arguments (use commas, NO quotes needed for strings):"
 argsLabel.Parent = execPanel
 
 local argsBox = pathBox:Clone()
 argsBox.Size = UDim2.new(1, -10, 0, 30)
 argsBox.Position = UDim2.new(0, 5, 0, 100)
-argsBox.PlaceholderText = "Example: 'MyWorld, 50, true' (Leave blank for no arguments)"
+argsBox.PlaceholderText = "Example: PlayerName, 5000, true"
 argsBox.Text = "" 
 argsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 argsBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
 argsBox.TextEditable = true
 argsBox.Parent = execPanel
 
+-- Argument Help Box (New Feature)
+local argHelp = Instance.new("TextLabel")
+argHelp.Size = UDim2.new(1, -10, 0, 30)
+argHelp.Position = UDim2.new(0, 5, 0, 135)
+argHelp.Text = "TIPS: Use 'LocalPlayer' for yourself. Use 'PlayerName' (no quotes) for others."
+argHelp.TextColor3 = Color3.fromRGB(255, 255, 100)
+argHelp.Font = Enum.Font.SourceSans
+argHelp.TextSize = 14
+argHelp.TextXAlignment = Enum.TextXAlignment.Left
+argHelp.BackgroundTransparency = 1
+argHelp.TextWrapped = true
+argHelp.Parent = execPanel
+
 local execButton = harvestButton:Clone()
 execButton.Size = UDim2.new(1, -10, 0, 40)
-execButton.Position = UDim2.new(0, 5, 0, 140)
+execButton.Position = UDim2.new(0, 5, 0, 170) -- Adjusted position
 execButton.Text = "EXECUTE COMMAND"
 execButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 execButton.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
@@ -213,13 +222,13 @@ execButton.Parent = execPanel
 
 -- Output Console
 local outputLabel = pathLabel:Clone()
-outputLabel.Position = UDim2.new(0, 5, 0, 185)
+outputLabel.Position = UDim2.new(0, 5, 0, 215) -- Adjusted position
 outputLabel.Text = "Execution Console Output:"
 outputLabel.Parent = execPanel
 
 local execOutput = Instance.new("TextBox")
-execOutput.Size = UDim2.new(1, -10, 1, -210)
-execOutput.Position = UDim2.new(0, 5, 0, 200)
+execOutput.Size = UDim2.new(1, -10, 1, -240) -- Adjusted size
+execOutput.Position = UDim2.new(0, 5, 0, 230) -- Adjusted position
 execOutput.Text = "Select a command on the left and enter arguments to begin."
 execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 execOutput.Font = Enum.Font.SourceSans
@@ -271,8 +280,14 @@ local function CreateRemoteButton(remoteData)
             remoteData.Path
         )
         execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
-        -- Set a common initial argument as a hint
-        argsBox.Text = (remoteData.Type == "RemoteEvent" or remoteData.Type == "RemoteFunction") and "TargetPlayerName" or ""
+        -- Provide an initial guess for the arguments
+        if string.find(remoteData.Name, "stat", 1, true) or string.find(remoteData.Name, "value", 1, true) then
+            argsBox.Text = "LocalPlayer, StatName, NewValue"
+        elseif string.find(remoteData.Name, "teleport", 1, true) or string.find(remoteData.Name, "move", 1, true) then
+            argsBox.Text = "TargetPlayerName"
+        else
+            argsBox.Text = "LocalPlayer"
+        end
     end)
     
     return btn
@@ -333,8 +348,6 @@ end)
 -- EXECUTOR LOGIC (RIGHT PANEL)
 -- ====================================================================
 
--- FindInstanceByPath is no longer needed, we use selectedRemoteObject directly!
-
 local function ParseArguments(argString)
     local args = {}
     
@@ -354,18 +367,12 @@ local function ParseArguments(argString)
             table.insert(args, false) -- Is boolean false
         elseif part == "LocalPlayer" then
             table.insert(args, LocalPlayer) -- Pass the local player instance
-        elseif string.match(part, "^[A-Za-z_]+$") then
-            -- Try to find a player by name if it's a simple string
-            local player = Players:FindFirstChild(part)
-            if player then
-                table.insert(args, player)
-            else
-                table.insert(args, part) -- Is a simple string
-            end
+        elseif Players:FindFirstChild(part) then
+            table.insert(args, Players:FindFirstChild(part)) -- Pass a player instance by name
         elseif part == "nil" then
             table.insert(args, nil)
         else
-            table.insert(args, part) -- Default to string (CFrame, complex name, etc.)
+            table.insert(args, part) -- Default to string (StatName, ItemName, etc.)
         end
     end
     
