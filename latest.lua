@@ -3,7 +3,10 @@
     
     This version includes the direct object reference fix for guaranteed execution
     and improved guidance for debugging arguments (the "nil" result problem).
+
+    MODIFIED FOR MOBILE: GUI is now responsive and uses a vertical layout.
 ]]
+
 
 local Game = game
 local Players = Game:GetService("Players")
@@ -27,10 +30,12 @@ local SERVICES_TO_SCAN = {
 local foundRemotes = {}
 local selectedRemoteObject = nil -- Stores the actual object reference
 
+
 -- Utility to log to the console
 local function Log(text)
     print("--- [UNIVERSAL COMMANDER] " .. text)
 end
+
 
 -- Function to check if an instance is a callable remote/bindable object
 local function IsCallableObject(instance)
@@ -40,9 +45,11 @@ local function IsCallableObject(instance)
            instance:IsA("BindableFunction")
 end
 
+
 -- Recursive function to search for all callable objects matching keywords
 local function DeepSearchForRemotes(instance, path)
     if not instance then return end
+
 
     if IsCallableObject(instance) then
         local instancePath = path .. "." .. instance.Name
@@ -55,6 +62,7 @@ local function DeepSearchForRemotes(instance, path)
             end
         end
 
+
         if #categories > 0 then
             table.insert(foundRemotes, {
                 Name = instance.Name, 
@@ -65,6 +73,7 @@ local function DeepSearchForRemotes(instance, path)
             })
         end
     end
+
 
     -- Recurse through children, limiting depth/size
     for _, child in ipairs(instance:GetChildren()) do
@@ -78,17 +87,22 @@ local function DeepSearchForRemotes(instance, path)
     end
 end
 
+
 -- ====================================================================
 -- GUI CONSTRUCTION
 -- ====================================================================
+
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "UniversalCommander"
 screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
+
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 780, 0, 500) 
-frame.Position = UDim2.new(0.5, -390, 0.5, -250)
+-- EDIT: Changed to scaled size and position for mobile.
+frame.Size = UDim2.new(0.95, 0, 0.9, 0) -- 95% width, 90% height
+frame.Position = UDim2.new(0.5, 0, 0.5, 0) -- Centered
+frame.AnchorPoint = Vector2.new(0.5, 0.5) -- Set AnchorPoint to center
 frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 frame.BorderSizePixel = 2
 frame.BorderColor3 = Color3.fromRGB(15, 15, 15)
@@ -96,47 +110,56 @@ frame.Active = true
 frame.Draggable = true
 frame.Parent = screenGui
 
+
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
-title.Text = "Universal Remote Commander (Ultimate Exploit Tool)"
+title.Text = "Universal Remote Commander" -- Shortened title
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
-title.TextSize = 20
+title.TextSize = 18
 title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 title.Parent = frame
 
--- LEFT PANEL: HARVESTER
+
+-- LEFT PANEL (NOW TOP PANEL)
 local harvestPanel = Instance.new("Frame")
-harvestPanel.Size = UDim2.new(0.5, -10, 1, -40)
+-- EDIT: Changed to top half
+harvestPanel.Size = UDim2.new(1, -10, 0.5, -20) 
 harvestPanel.Position = UDim2.new(0, 5, 0, 35)
 harvestPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 harvestPanel.Parent = frame
+
 
 local harvestTitle = title:Clone()
 harvestTitle.Name = "HarvestTitle"
 harvestTitle.Text = "STEP 1: COMMAND HARVESTER"
 harvestTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
 harvestTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+harvestTitle.TextSize = 16
 harvestTitle.Parent = harvestPanel
 
+
 local harvestButton = Instance.new("TextButton")
-harvestButton.Size = UDim2.new(1, -10, 0, 40)
+harvestButton.Size = UDim2.new(1, -10, 0, 35)
 harvestButton.Position = UDim2.new(0, 5, 0, 35)
 harvestButton.Text = "RUN ULTIMATE HARVEST"
 harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 harvestButton.Font = Enum.Font.SourceSansBold
-harvestButton.TextSize = 18
+harvestButton.TextSize = 16
 harvestButton.BackgroundColor3 = Color3.fromRGB(130, 0, 255)
 harvestButton.Parent = harvestPanel
 
+
 local resultsFrame = Instance.new("ScrollingFrame")
-resultsFrame.Size = UDim2.new(1, -10, 1, -110)
-resultsFrame.Position = UDim2.new(0, 5, 0, 80)
+-- EDIT: Adjusted size/pos to fit new panel layout
+resultsFrame.Size = UDim2.new(1, -10, 1, -80) 
+resultsFrame.Position = UDim2.new(0, 5, 0, 75)
 resultsFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 resultsFrame.BorderSizePixel = 0
 resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-resultsFrame.ScrollBarThickness = 6
+resultsFrame.ScrollBarThickness = 8 -- Thicker scrollbar for touch
 resultsFrame.Parent = harvestPanel
+
 
 local listLayout = Instance.new("UIListLayout")
 listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -145,24 +168,29 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Padding = UDim.new(0, 2)
 listLayout.Parent = resultsFrame
 
--- RIGHT PANEL: COMMANDER
+
+-- RIGHT PANEL (NOW BOTTOM PANEL)
 local execPanel = Instance.new("Frame")
-execPanel.Size = UDim2.new(0.5, -10, 1, -40)
-execPanel.Position = UDim2.new(0.5, 5, 0, 35)
+-- EDIT: Changed to bottom half
+execPanel.Size = UDim2.new(1, -10, 0.5, -20) 
+execPanel.Position = UDim2.new(0, 5, 0.5, 20)
 execPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 execPanel.Parent = frame
+
 
 local execTitle = title:Clone()
 execTitle.Name = "ExecutorTitle"
 execTitle.Text = "STEP 2: REMOTE COMMANDER"
 execTitle.TextColor3 = Color3.fromRGB(255, 255, 100)
 execTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+execTitle.TextSize = 16
 execTitle.Parent = execPanel
 
--- Path Box (Uneditable by user, set by Harvester)
+
+-- Path Box
 local pathLabel = Instance.new("TextLabel")
 pathLabel.Size = UDim2.new(1, -10, 0, 15)
-pathLabel.Position = UDim2.new(0, 5, 0, 35)
+pathLabel.Position = UDim2.new(0, 5, 0, 30) -- Repositioned
 pathLabel.Text = "Remote Path:"
 pathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 pathLabel.Font = Enum.Font.SourceSans
@@ -171,9 +199,10 @@ pathLabel.TextXAlignment = Enum.TextXAlignment.Left
 pathLabel.BackgroundTransparency = 1
 pathLabel.Parent = execPanel
 
+
 local pathBox = Instance.new("TextBox")
-pathBox.Size = UDim2.new(1, -10, 0, 30)
-pathBox.Position = UDim2.new(0, 5, 0, 50)
+pathBox.Size = UDim2.new(1, -10, 0, 25)
+pathBox.Position = UDim2.new(0, 5, 0, 45) -- Repositioned
 pathBox.PlaceholderText = "Select a command on the left first."
 pathBox.Text = "" 
 pathBox.Font = Enum.Font.SourceSans
@@ -183,15 +212,17 @@ pathBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
 pathBox.Parent = execPanel
 pathBox.TextEditable = false 
 
+
 -- Arguments Box
 local argsLabel = pathLabel:Clone()
-argsLabel.Position = UDim2.new(0, 5, 0, 85)
-argsLabel.Text = "Arguments (use commas, NO quotes needed for strings):"
+argsLabel.Position = UDim2.new(0, 5, 0, 75) -- Repositioned
+argsLabel.Text = "Arguments (commas, NO quotes for strings):"
 argsLabel.Parent = execPanel
 
+
 local argsBox = pathBox:Clone()
-argsBox.Size = UDim2.new(1, -10, 0, 30)
-argsBox.Position = UDim2.new(0, 5, 0, 100)
+argsBox.Size = UDim2.new(1, -10, 0, 25)
+argsBox.Position = UDim2.new(0, 5, 0, 90) -- Repositioned
 argsBox.PlaceholderText = "Example: PlayerName, 5000, true"
 argsBox.Text = "" 
 argsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -199,40 +230,45 @@ argsBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
 argsBox.TextEditable = true
 argsBox.Parent = execPanel
 
--- Argument Help Box (New Feature)
+
+-- Argument Help Box
 local argHelp = Instance.new("TextLabel")
 argHelp.Size = UDim2.new(1, -10, 0, 30)
-argHelp.Position = UDim2.new(0, 5, 0, 135)
+argHelp.Position = UDim2.new(0, 5, 0, 115) -- Repositioned
 argHelp.Text = "TIPS: Use 'LocalPlayer' for yourself. Use 'PlayerName' (no quotes) for others."
 argHelp.TextColor3 = Color3.fromRGB(255, 255, 100)
 argHelp.Font = Enum.Font.SourceSans
-argHelp.TextSize = 14
+argHelp.TextSize = 12
 argHelp.TextXAlignment = Enum.TextXAlignment.Left
 argHelp.BackgroundTransparency = 1
 argHelp.TextWrapped = true
 argHelp.Parent = execPanel
 
+
 local execButton = harvestButton:Clone()
-execButton.Size = UDim2.new(1, -10, 0, 40)
-execButton.Position = UDim2.new(0, 5, 0, 170) -- Adjusted position
+execButton.Size = UDim2.new(1, -10, 0, 35)
+execButton.Position = UDim2.new(0, 5, 0, 150) -- Repositioned
 execButton.Text = "EXECUTE COMMAND"
 execButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 execButton.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
 execButton.Parent = execPanel
 
+
 -- Output Console
 local outputLabel = pathLabel:Clone()
-outputLabel.Position = UDim2.new(0, 5, 0, 215) -- Adjusted position
+outputLabel.Position = UDim2.new(0, 5, 0, 190) -- Repositioned
 outputLabel.Text = "Execution Console Output:"
 outputLabel.Parent = execPanel
 
+
 local execOutput = Instance.new("TextBox")
-execOutput.Size = UDim2.new(1, -10, 1, -240) -- Adjusted size
-execOutput.Position = UDim2.new(0, 5, 0, 230) -- Adjusted position
+-- EDIT: Adjusted size/pos to fill remaining space in bottom panel
+execOutput.Size = UDim2.new(1, -10, 1, -210) 
+execOutput.Position = UDim2.new(0, 5, 0, 205)
 execOutput.Text = "Select a command on the left and enter arguments to begin."
 execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 execOutput.Font = Enum.Font.SourceSans
-execOutput.TextSize = 16
+execOutput.TextSize = 14
 execOutput.TextWrapped = true
 execOutput.TextXAlignment = Enum.TextXAlignment.Left
 execOutput.TextYAlignment = Enum.TextYAlignment.Top
@@ -241,9 +277,11 @@ execOutput.MultiLine = true
 execOutput.TextEditable = false
 execOutput.Parent = execPanel
 
+
 -- ====================================================================
 -- HARVESTER LOGIC (LEFT PANEL)
 -- ====================================================================
+
 
 local function CreateRemoteButton(remoteData)
     local btn = Instance.new("TextButton")
@@ -258,6 +296,7 @@ local function CreateRemoteButton(remoteData)
     local nameColor = remoteData.Type == "RemoteEvent" and "#FFC04D" or "#4DFFFF" -- Yellow/Cyan
     local matchText = table.concat(remoteData.Categories, ", ")
 
+
     btn.Text = string.format("  <font color='%s'>%s</font> | %s | Matches: %s", 
         nameColor, 
         remoteData.Name, 
@@ -266,6 +305,7 @@ local function CreateRemoteButton(remoteData)
     )
     btn.RichText = true
     btn.Parent = resultsFrame
+
 
     -- On Click, populate the executor panel
     btn.MouseButton1Click:Connect(function()
@@ -293,16 +333,19 @@ local function CreateRemoteButton(remoteData)
     return btn
 end
 
+
 local function DisplayResults()
     for _, child in ipairs(resultsFrame:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
+
 
     if #foundRemotes == 0 then
         execOutput.Text = "No suspicious commands found. Security is extremely high."
         resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
         return
     end
+
 
     for _, remote in ipairs(foundRemotes) do
         CreateRemoteButton(remote)
@@ -312,9 +355,10 @@ local function DisplayResults()
     resultsFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
     
     Log(string.format("HARVEST COMPLETE: %d commands found.", #foundRemotes))
-    execOutput.Text = string.format("HARVEST COMPLETE: %d commands found. Scroll the left list and click one to select it.", #foundRemotes)
+    execOutput.Text = string.format("HARVEST COMPLETE: %d commands found. Scroll the top list and click one to select it.", #foundRemotes)
     execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
 end
+
 
 local function RunRemoteScan()
     table.clear(foundRemotes)
@@ -340,13 +384,16 @@ local function RunRemoteScan()
     harvestButton.BackgroundColor3 = Color3.fromRGB(130, 0, 255)
 end
 
+
 harvestButton.MouseButton1Click:Connect(function()
     task.spawn(RunRemoteScan)
 end)
 
+
 -- ====================================================================
 -- EXECUTOR LOGIC (RIGHT PANEL)
 -- ====================================================================
+
 
 local function ParseArguments(argString)
     local args = {}
@@ -379,11 +426,13 @@ local function ParseArguments(argString)
     return args
 end
 
+
 execButton.MouseButton1Click:Connect(function()
     local path = pathBox.Text -- Just for display purposes
     local argString = argsBox.Text
     
     local Remote = selectedRemoteObject -- Use the globally stored object reference
+
 
     if not Remote or not IsCallableObject(Remote) then
         execOutput.Text = "Execution Error: No valid command selected. Please click an item in the Harvester list first."
@@ -391,10 +440,12 @@ execButton.MouseButton1Click:Connect(function()
         return
     end
 
+
     local args = ParseArguments(argString)
     
     execOutput.Text = string.format("Attempting to fire %s: %s\nArguments: %s\n\nResult:", Remote.ClassName, Remote.Name, table.concat(args, ", "))
     execOutput.TextColor3 = Color3.fromRGB(255, 165, 0)
+
 
     local success, result
     
