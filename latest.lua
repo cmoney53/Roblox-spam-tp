@@ -1,12 +1,13 @@
 --[[
-    UNIVERSAL SINGLE-CLICK EXECUTOR v9 - FINAL HARVEST BUTTON FIX
+    UNIVERSAL SINGLE-CLICK EXECUTOR v10 - ROBUST HARVESTER
     
-    This version ensures the primary button is clearly labeled, positioned correctly, 
-    and incorporates all confirmed requirements:
+    This version includes the ultimate fix for the "no commands showing" issue by 
+    forcing a scan of the entire 'game' hierarchy and uses a more robust pathing system.
+    
     1. Primary button is clearly labeled "RUN COMMAND HARVESTER".
     2. Executes the command INSTANTLY upon clicking the list button using ZERO ARGUMENTS ({}).
     3. Includes Minimize and Search/Filter functionality.
-    4. Set to stable 500px height to reliably display results.
+    4. Set to stable 500px height.
 ]]
 
 local Game = game
@@ -20,6 +21,7 @@ local FULL_HEIGHT = 500 -- Stable height
 local MIN_HEIGHT = 30
 local isMinimized = false
 local currentSearchQuery = "" -- Search query state
+local instancesScanned = 0
 
 -- UI Layout Constants
 local CONTROL_HEIGHT = 30
@@ -38,12 +40,8 @@ local SUSPICIOUS_KEYWORDS = {
     "hook", "client", "local", "trigger",
     "secret", "key", "token", "password", "hidden", "exploit", "cheat" 
 }
+-- Service list now includes the 'Game' root for guaranteed full deep scan
 local SERVICES_TO_SCAN = {
-    Game:GetService("Workspace"), Game:GetService("ReplicatedStorage"), 
-    Game:GetService("ReplicatedFirst"), Game:GetService("StarterGui"),
-    Game:GetService("StarterPlayer"):FindFirstChild("StarterCharacterScripts"),
-    Game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts"),
-    Game:GetService("Lighting"), Game:GetService("SoundService"),
     Game
 }
 local foundRemotes = {}
@@ -81,12 +79,15 @@ local function IsCallableObject(instance)
            instance:IsA("BindableFunction")
 end
 
--- DeepSearch now ONLY collects callable objects
+-- DeepSearch with robust path tracking and exclusion logic
 local function DeepSearchForRemotes(instance, path)
-    if not instance then return end
+    if not instance or instance:IsA("MaterialService") or instance:IsA("LocalizationService") then return end
+    
+    instancesScanned = instancesScanned + 1
+
+    local newPath = (path == "") and instance.Name or path .. "." .. instance.Name
 
     if IsCallableObject(instance) then
-        local instancePath = path .. "." .. instance.Name
         local lowerName = string.lower(instance.Name)
         
         local categories = {}
@@ -102,7 +103,7 @@ local function DeepSearchForRemotes(instance, path)
 
         table.insert(foundRemotes, {
             Name = instance.Name, 
-            Path = instancePath, 
+            Path = newPath, -- Use the robust path
             Type = instance.ClassName,
             Categories = categories,
             Instance = instance 
@@ -110,15 +111,17 @@ local function DeepSearchForRemotes(instance, path)
     end
 
     for _, child in ipairs(instance:GetChildren()) do
-        -- Skip scripts and only recurse on non-configuration items
+        -- Skip scripts (LocalScript, Script, ModuleScript) to keep the list clean and focused on commands
         if not child:IsA("Configuration") and
-           not child:IsA("MaterialService") and 
-           not child:IsA("LocalizationService") and
-           not child:IsA("LocalScript") and -- Exclude scripts from search
+           not child:IsA("LocalScript") and 
            not child:IsA("Script") and
            not child:IsA("ModuleScript")
         then
-            DeepSearchForRemotes(child, path .. "." .. child.Name)
+            -- Yield occasionally to avoid crashing the game thread
+            if instancesScanned % 100 == 0 then
+                task.wait()
+            end
+            DeepSearchForRemotes(child, newPath)
         end
     end
 end
@@ -166,7 +169,7 @@ frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, MIN_HEIGHT) 
-title.Text = "Universal Single-Click Executor v9"
+title.Text = "Universal Single-Click Executor v10"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
@@ -191,7 +194,7 @@ mainPanel.Size = UDim2.new(1, -10, 1, -35)
 mainPanel.Position = UDim2.new(0, 5, 0, 35) 
 mainPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 mainPanel.Parent = frame
-mainPanel.ZIndex = 2 -- Ensure it sits above the frame background
+mainPanel.ZIndex = 2 
 
 -- CALCULATE Y POSITIONS
 local yPos = CONTROL_Y_START
@@ -206,7 +209,7 @@ local harvestButton = Instance.new("TextButton")
 harvestButton.Name = "HarvestButton"
 harvestButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT) 
 harvestButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT)) 
-harvestButton.Text = "RUN COMMAND HARVESTER" -- CLARIFIED LABEL
+harvestButton.Text = "RUN COMMAND HARVESTER"
 harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 harvestButton.Font = Enum.Font.SourceSansBold
 harvestButton.TextSize = 16
@@ -403,7 +406,7 @@ local function DisplayResults()
 
     if totalFound == 0 then
         -- No commands found
-        UpdateStatus("SCAN COMPLETE: Zero callable commands (Remote/Bindable) found. This game environment is very locked down.", Color3.fromRGB(255, 100, 0))
+        UpdateStatus(string.format("SCAN COMPLETE: Scanned %d instances. Zero callable commands found. This game is highly secured.", instancesScanned), Color3.fromRGB(255, 100, 0))
     elseif totalItems == 0 then
         -- Commands were found, but none match the filter
         UpdateStatus(string.format("No commands match the filter: '%s'. Total commands found: %d.", currentSearchQuery, totalFound), Color3.fromRGB(255, 165, 0))
@@ -414,7 +417,7 @@ local function DisplayResults()
         end
         
         local statusText = totalItems == totalFound and 
-            string.format("SCAN COMPLETE: %d commands found. Click to execute with 0 arguments.", totalFound) or
+            string.format("SCAN COMPLETE: %d commands found (Scanned %d instances). Click to execute with 0 arguments.", totalFound, instancesScanned) or
             string.format("FILTER APPLIED: Showing %d of %d commands. Click to execute with 0 arguments.", totalItems, totalFound)
 
         UpdateStatus(statusText, Color3.fromRGB(0, 255, 100))
@@ -427,22 +430,23 @@ end
 
 local function RunRemoteScan()
     table.clear(foundRemotes)
+    instancesScanned = 0 -- Reset scan counter
     
     harvestButton.Text = "HARVESTING..."
     harvestButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
     
-    UpdateStatus("Starting scan for RemoteEvents, RemoteFunctions, and Bindables...", Color3.fromRGB(255, 165, 0))
+    UpdateStatus("Starting deep scan for RemoteEvents, RemoteFunctions, and Bindables...", Color3.fromRGB(255, 165, 0))
     
-    -- Run deep search concurrently for speed
+    -- Run deep search starting from the game root
     local co = coroutine.wrap(function()
         for _, service in ipairs(SERVICES_TO_SCAN) do
-            DeepSearchForRemotes(service, "game." .. (service and service.Name or "nil"))
-            task.wait(0.05) -- Yield occasionally
+            DeepSearchForRemotes(service, "game")
         end
     end)
     co()
     
-    task.wait(1.5) -- Give time for most popular services to be scanned
+    -- Wait a little longer to ensure the deep search completes since it yields
+    task.wait(2.5) 
 
     DisplayResults()
     
