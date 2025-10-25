@@ -1,19 +1,19 @@
 --[[
     STANDALONE PLAYER TELEPORT GUI
 
-    This script creates a custom GUI for listing all players and provides
-    'Bring' (teleport target to you) and 'Teleport To' (teleport you to target)
-    functionality without relying on Infinite Yield's internal command system.
+    Creates a custom GUI for player listing, Binging, and Teleporting To,
+    with robust player detection logic to work in most execution environments.
 ]]
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
 
--- Check if LocalPlayer is available
+-- Attempt to get LocalPlayer, and wait if necessary (though the script assumes a loaded executor)
+local LocalPlayer = Players.LocalPlayer or Players.LocalPlayer:Wait()
+
 if not LocalPlayer then
-    warn("Player Teleport GUI failed to initialize: LocalPlayer is nil.")
+    warn("Player Teleport GUI failed to initialize: LocalPlayer is nil after waiting.")
     return
 end
 
@@ -21,6 +21,12 @@ end
 -- 1. UTILITY FUNCTIONS
 -- ====================================================================
 
+local function SimpleNotify(text)
+    -- This function provides basic console feedback since we aren't using the host script's 'notify'
+    print("[TeleportGUI] " .. text)
+end
+
+-- Function to teleport target to you
 local function BringTarget(targetPlayer)
     local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
     local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild('HumanoidRootPart')
@@ -35,6 +41,7 @@ local function BringTarget(targetPlayer)
     return "SUCCESS: Brought " .. targetPlayer.Name .. " to you."
 end
 
+-- Function to teleport you to target
 local function TeleportToTarget(targetPlayer)
     local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
     local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild('HumanoidRootPart')
@@ -49,11 +56,6 @@ local function TeleportToTarget(targetPlayer)
     return "SUCCESS: Teleported to " .. targetPlayer.Name .. "."
 end
 
--- Simple Notification System (optional, can be replaced by exploit's notify function if available)
-local function SimpleNotify(text)
-    print("[TeleportGUI] " .. text)
-end
-
 -- ====================================================================
 -- 2. GUI SETUP
 -- ====================================================================
@@ -61,19 +63,19 @@ end
 -- Main Container ScreenGui
 local gui = Instance.new("ScreenGui")
 gui.Name = "TeleportPlayerListGui"
-gui.IgnoreGuiInset = true -- Optional: keeps UI tight to edges
+gui.IgnoreGuiInset = true
 gui.Parent = CoreGui
 
 -- Main Frame (Centered)
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 250, 0, 400)
-mainFrame.Position = UDim2.new(0.5, -125, 0.5, -200)
+mainFrame.Size = UDim2.new(0, 280, 0, 400) -- Slightly wider
+mainFrame.Position = UDim2.new(0.5, -140, 0.5, -200)
 mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 mainFrame.BorderColor3 = Color3.fromRGB(25, 25, 25)
 mainFrame.BorderSizePixel = 2
-mainFrame.Active = true -- Allows drag
-mainFrame.Draggable = true -- Allows drag
+mainFrame.Active = true
+mainFrame.Draggable = true
 mainFrame.Parent = gui
 
 -- Title Bar
@@ -107,9 +109,9 @@ end)
 -- Player List Scrolling Frame
 local playerList = Instance.new("ScrollingFrame")
 playerList.Name = "PlayerList"
-playerList.Size = UDim2.new(1, 0, 1, -30) -- Full width, full height minus title bar
+playerList.Size = UDim2.new(1, 0, 1, -30)
 playerList.Position = UDim2.new(0, 0, 0, 30)
-playerList.CanvasSize = UDim2.new(0, 0, 0, 0) -- Updated by UIListLayout
+playerList.CanvasSize = UDim2.new(0, 0, 0, 0)
 playerList.ScrollBarThickness = 6
 playerList.BackgroundTransparency = 1
 playerList.Parent = mainFrame
@@ -122,8 +124,6 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Parent = playerList
 
 -- Auto Canvas Size setter
-local canvasSizer = Instance.new("UISizeConstraint")
-canvasSizer.Parent = listLayout
 listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     playerList.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
 end)
@@ -133,40 +133,41 @@ end)
 -- 3. PLAYER LISTING AND FUNCTIONALITY
 -- ====================================================================
 
+-- Cache to track which players already have an entry
+local playerEntries = {}
+
 -- Function to create a button entry for a single player
 local function CreatePlayerEntry(player)
     
     -- Main Frame for the entry
     local entryFrame = Instance.new("Frame")
     entryFrame.Name = player.Name
-    entryFrame.Size = UDim2.new(1, -5, 0, 40) -- Slightly smaller width
+    entryFrame.Size = UDim2.new(1, -5, 0, 40) -- Full width, 40 height
     entryFrame.BackgroundTransparency = 1
     entryFrame.Parent = playerList
 
     -- Player Name Label
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Name = "NameLabel"
-    nameLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    nameLabel.Size = UDim2.new(0.4, 0, 1, 0) -- Takes 40% of the space
     nameLabel.Position = UDim2.new(0, 0, 0, 0)
     nameLabel.Text = player.Name
-    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
     nameLabel.Font = Enum.Font.SourceSans
     nameLabel.TextSize = 16
     nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.TextWrapped = true
     nameLabel.BackgroundTransparency = 1
-    nameLabel.Padding = UDim.new(0, 5) -- Inner padding
     nameLabel.Parent = entryFrame
 
     -- Bring Button
     local bringBtn = Instance.new("TextButton")
     bringBtn.Name = "BringButton"
-    bringBtn.Size = UDim2.new(0.25, 0, 1, 0)
-    bringBtn.Position = UDim2.new(0.5, 0, 0, 0)
-    bringBtn.Text = "Bring"
+    bringBtn.Size = UDim2.new(0.3, 0, 1, -5) -- Takes 30% of space
+    bringBtn.Position = UDim2.new(0.4, 0, 0, 0)
+    bringBtn.Text = "Bring Them"
     bringBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     bringBtn.Font = Enum.Font.SourceSansBold
-    bringBtn.TextSize = 15
+    bringBtn.TextSize = 14
     bringBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 255)
     bringBtn.Parent = entryFrame
 
@@ -178,12 +179,12 @@ local function CreatePlayerEntry(player)
     -- Teleport To Button
     local tpToBtn = Instance.new("TextButton")
     tpToBtn.Name = "TPToButton"
-    tpToBtn.Size = UDim2.new(0.25, 0, 1, 0)
-    tpToBtn.Position = UDim2.new(0.75, 0, 0, 0)
-    tpToBtn.Text = "TP To"
+    tpToBtn.Size = UDim2.new(0.3, 0, 1, -5) -- Takes 30% of space
+    tpToBtn.Position = UDim2.new(0.7, 0, 0, 0)
+    tpToBtn.Text = "TP To Them"
     tpToBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     tpToBtn.Font = Enum.Font.SourceSansBold
-    tpToBtn.TextSize = 15
+    tpToBtn.TextSize = 14
     tpToBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
     tpToBtn.Parent = entryFrame
 
@@ -195,29 +196,25 @@ local function CreatePlayerEntry(player)
     return entryFrame
 end
 
--- Cache to track which players already have an entry
-local playerEntries = {}
-
 -- Main loop to update the player list
 RunService.Heartbeat:Connect(function()
+    -- 1. Check for new players and update existing
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
+        -- Only process players that are not the local player
+        if player.UserId ~= LocalPlayer.UserId then
             if not playerEntries[player.UserId] then
                 -- Player joined: create new entry
                 local entry = CreatePlayerEntry(player)
                 playerEntries[player.UserId] = entry
             end
-        elseif playerEntries[player.UserId] then
-            -- This is the local player, ensure they don't have an entry
-            playerEntries[player.UserId]:Destroy()
-            playerEntries[player.UserId] = nil
         end
     end
 
-    -- Check for players who left
+    -- 2. Check for players who left
     for userId, entry in pairs(playerEntries) do
         local player = Players:GetPlayerByUserId(userId)
         if not player then
+            -- Player left: destroy the entry and remove from cache
             entry:Destroy()
             playerEntries[userId] = nil
         end
