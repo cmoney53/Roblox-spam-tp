@@ -1,77 +1,39 @@
 --[[
-    UNIVERSAL REMOTE EXECUTOR: FINAL EDITION (v14)
+    UNIVERSAL REMOTE COMMANDER: Smart Argument Guessing & Guaranteed Execution.
     
-    A comprehensive tool combining deep harvesting, one-click execution,
-    real-time filtering, and a dedicated clear button for maximum efficiency.
-    
-    Functionality:
-    1. DEEP HARVEST: Scans all services, including 'game', for callable objects.
-    2. ONE-CLICK EXECUTION: Fires the selected remote with zero arguments ({}) for quick testing.
-    3. CLEAR BUTTON: Instantly removes all buttons from the display.
-    4. FILTER: Searches by command name or full path.
+    This version now provides a list of common argument combinations to debug 
+    the "nil" problem frequently seen with stat/value setters.
 ]]
 
 local Game = game
 local Players = Game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
--- local HttpService = Game:GetService("HttpService") -- Not strictly needed for core functionality
-
--- Configuration Constants
-local FULL_WIDTH = 450 
-local FULL_HEIGHT = 500 
-local MIN_HEIGHT = 30
-local isMinimized = false
-local currentSearchQuery = ""
-local instancesScanned = 0
-
--- UI Layout Constants
-local CONTROL_HEIGHT = 30
-local CONTROL_Y_START = 5
-local BUTTON_MARGIN = 5 
-local RESULTS_LIST_HEIGHT = 330 
-local STATUS_OUTPUT_HEIGHT = 65
-
--- Keywords for categorization and visual highlighting
+local HttpService = Game:GetService("HttpService") 
 local SUSPICIOUS_KEYWORDS = {
-    "teleport", "tp", "move", "position", "warp", "goto", 
-    "admin", "kick", "ban", "kill", "damage", "health", 
-    "command", "server", "setprop", "property", 
-    "item", "inventory", "stat", "update", "value", 
-    "char", "character", "load", "save", "debug", "test", 
-    "give", "add", "remove", "currency", "level", "xp"
+    "teleport", "tp", "move", "position", "warp", "goto", "cframe", 
+    "admin", "kick", "ban", "kill", "respawn", "damage", "health", 
+    "command", "server", "setprop", "property", "override",
+    "item", "inventory", "stat", "update", "value", "setvalue", 
+    "char", "character", "load", "save", "debug", "test", "dev",
+    "give", "add", "remove", "currency", "level", "xp", "money", "cash", "luck"
 }
-
 local SERVICES_TO_SCAN = {
-    Game -- Starting the scan from the game root is critical for full coverage
+    Game:GetService("Workspace"), Game:GetService("ReplicatedStorage"), 
+    Game:GetService("ReplicatedFirst"), Game:GetService("StarterGui"),
+    Game:GetService("StarterPlayer"):FindFirstChild("StarterCharacterScripts"),
+    Game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts"),
+    Game:GetService("Lighting"), Game:GetService("SoundService"),
+    Game
 }
 local foundRemotes = {}
+local selectedRemoteObject = nil -- Stores the actual object reference
 
 -- Utility to log to the console
 local function Log(text)
-    print("--- [UNIVERSAL EXECUTOR] " .. text)
+    print("--- [UNIVERSAL COMMANDER] " .. text)
 end
 
--- ====================================================================
--- CORE HARVESTER & UTILITY FUNCTIONS 
--- ====================================================================
-
--- Formats a return value for display in the status box
-local function FormatArgument(val)
-    if type(val) == "string" then
-        return string.format("\"%s\"", val)
-    elseif val == nil then
-        return "nil"
-    elseif type(val) == "boolean" then
-        return val and "true" or "false"
-    elseif type(val) == "userdata" and tostring(val):find("CFrame") then
-        local cframe = val
-        return string.format("CFR(%.1f, %.1f, %.1f, ...)", cframe.X, cframe.Y, cframe.Z)
-    else
-        return tostring(val)
-    end
-end
-
--- Check if an instance is a Remote or Bindable object
+-- Function to check if an instance is a callable remote/bindable object
 local function IsCallableObject(instance)
     return instance:IsA("RemoteEvent") or 
            instance:IsA("RemoteFunction") or
@@ -79,86 +41,95 @@ local function IsCallableObject(instance)
            instance:IsA("BindableFunction")
 end
 
--- DeepSearch: Iterates through the game hierarchy recursively
+-- Function to guess arguments and provide hints (IMPROVED LOGIC)
+local function GuessArguments(remoteName)
+    local lowerName = string.lower(remoteName)
+    local prefill = ""
+    local hints = {}
+    
+    -- PRIORITY 1: STAT/VALUE SETTERS
+    if string.find(lowerName, "stat") or string.find(lowerName, "value") or string.find(lowerName, "update") or string.find(lowerName, "set") or string.find(lowerName, "luck") then
+        prefill = "LocalPlayer, StatName_STRING, 99999_NUMBER"
+        table.insert(hints, "- **Stat Setter Guesses** (Try these in the input box):")
+        table.insert(hints, "  - `LocalPlayer, 99999` (If it only needs Player and Value)")
+        table.insert(hints, "  - `LocalPlayer, \"Luck\", 99999` (If it needs Stat Name string)")
+        table.insert(hints, "  - `99999` (If it only needs Value)")
+        table.insert(hints, "  - `LocalPlayer, 99999, true` (If it needs a final Boolean flag)")
+    -- PRIORITY 2: TELEPORT/TARGET
+    elseif string.find(lowerName, "teleport") or string.find(lowerName, "tp") or string.find(lowerName, "move") then
+        prefill = "TargetPlayerName_STRING"
+        table.insert(hints, "- **Teleport Guesses**:")
+        table.insert(hints, "  - `TargetPlayerName` (To teleport another player)")
+        table.insert(hints, "  - `LocalPlayer` (To maybe teleport yourself to a stored location)")
+    -- PRIORITY 3: GIVE/REMOVE ITEM
+    elseif string.find(lowerName, "give") or string.find(lowerName, "item") or string.find(lowerName, "add") then
+        prefill = "LocalPlayer, ItemName_STRING, 1_NUMBER"
+        table.insert(hints, "- **Item Guesses**:")
+        table.insert(hints, "  - `LocalPlayer, \"Sword\", 1`")
+    -- PRIORITY 4: ADMIN/COMMAND
+    elseif string.find(lowerName, "admin") or string.find(lowerName, "command") then
+        prefill = 'LocalPlayer, "Command_STRING"'
+        table.insert(hints, "- **Admin Guesses**:")
+        table.insert(hints, "  - `\"Give\", \"Money\", 10000` (Try commands common to admin systems)")
+    -- DEFAULT
+    else
+        prefill = "LocalPlayer"
+        table.insert(hints, "- **General Guess**:")
+        table.insert(hints, "  - Try: `LocalPlayer`, `true`, or just leave the box blank.")
+    end
+    
+    return prefill, table.concat(hints, "\n")
+end
+
+-- Recursive function to search for all callable objects matching keywords
 local function DeepSearchForRemotes(instance, path)
     if not instance then return end
-    
-    instancesScanned = instancesScanned + 1
-
-    local newPath = (path == "") and instance.Name or path .. "." .. instance.Name
 
     if IsCallableObject(instance) then
+        local instancePath = path .. "." .. instance.Name
         local lowerName = string.lower(instance.Name)
-        local categories = {}
         
-        -- Categorize based on keywords
+        local categories = {}
         for _, keyword in ipairs(SUSPICIOUS_KEYWORDS) do
             if string.find(lowerName, keyword) then
                 table.insert(categories, keyword)
             end
         end
 
-        if #categories == 0 then
-            table.insert(categories, "General")
+        if #categories > 0 then
+            table.insert(foundRemotes, {
+                Name = instance.Name, 
+                Path = instancePath, 
+                Type = instance.ClassName,
+                Categories = categories,
+                Instance = instance 
+            })
         end
-
-        table.insert(foundRemotes, {
-            Name = instance.Name, 
-            Path = newPath,
-            Type = instance.ClassName,
-            Categories = categories,
-            Instance = instance 
-        })
     end
 
+    -- Recurse through children, limiting depth/size
     for _, child in ipairs(instance:GetChildren()) do
-        -- Skip scripts and configurations for a clean command list
-        if not child:IsA("Configuration") and
-           not child:IsA("LocalScript") and 
-           not child:IsA("Script") and
-           not child:IsA("ModuleScript")
+        if #child:GetChildren() < 1000 and 
+           not child:IsA("Configuration") and
+           not child:IsA("MaterialService") and 
+           not child:IsA("LocalizationService")
         then
-            if instancesScanned % 100 == 0 then
-                task.wait() -- Yield occasionally
-            end
-            DeepSearchForRemotes(child, newPath)
+            DeepSearchForRemotes(child, path .. "." .. child.Name)
         end
     end
 end
-
--- Fire the remote (or invoke the function)
-local function FireRemote(remote, args)
-    local success, result
-    
-    local resultWrapper = function()
-        if remote:IsA("RemoteEvent") then
-            remote:FireServer(unpack(args)) 
-        elseif remote:IsA("BindableEvent") then
-            remote:Fire(unpack(args)) 
-        elseif remote:IsA("RemoteFunction") then
-            return remote:InvokeServer(unpack(args)) 
-        elseif remote:IsA("BindableFunction") then
-            return remote:Invoke(unpack(args)) 
-        end
-    end
-
-    success, result = pcall(resultWrapper)
-    
-    return success, result
-end
-
 
 -- ====================================================================
--- GUI CONSTRUCTION 
+-- GUI CONSTRUCTION (Unchanged)
 -- ====================================================================
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UniversalExecutor"
+screenGui.Name = "UniversalCommander"
 screenGui.Parent = Game:GetService("CoreGui") or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, FULL_WIDTH, 0, FULL_HEIGHT) 
-frame.Position = UDim2.new(0.5, -FULL_WIDTH/2, 0.5, -FULL_HEIGHT/2) 
+frame.Size = UDim2.new(0, 780, 0, 500) 
+frame.Position = UDim2.new(0.5, -390, 0.5, -250)
 frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 frame.BorderSizePixel = 2
 frame.BorderColor3 = Color3.fromRGB(15, 15, 15)
@@ -167,97 +138,46 @@ frame.Draggable = true
 frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, MIN_HEIGHT) 
-title.Text = "Universal Remote Executor: Final"
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Text = "Universal Remote Commander (Smart Exploitation Tool)"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
 title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 title.Parent = frame
 
--- Minimize Button
-local minimizeButton = Instance.new("TextButton")
-minimizeButton.Name = "MinimizeButton"
-minimizeButton.Size = UDim2.new(0, 30, 0, MIN_HEIGHT)
-minimizeButton.Position = UDim2.new(1, -30, 0, 0)
-minimizeButton.Text = "-" 
-minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-minimizeButton.Font = Enum.Font.SourceSansBold
-minimizeButton.TextSize = 20
-minimizeButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-minimizeButton.Parent = frame
+-- LEFT PANEL: HARVESTER
+local harvestPanel = Instance.new("Frame")
+harvestPanel.Size = UDim2.new(0.5, -10, 1, -40)
+harvestPanel.Position = UDim2.new(0, 5, 0, 35)
+harvestPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+harvestPanel.Parent = frame
 
--- MAIN PANEL
-local mainPanel = Instance.new("Frame")
-mainPanel.Size = UDim2.new(1, -10, 1, -35) 
-mainPanel.Position = UDim2.new(0, 5, 0, 35) 
-mainPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-mainPanel.Parent = frame
-mainPanel.ZIndex = 2 
+local harvestTitle = title:Clone()
+harvestTitle.Name = "HarvestTitle"
+harvestTitle.Text = "STEP 1: COMMAND HARVESTER"
+harvestTitle.TextColor3 = Color3.fromRGB(200, 200, 255)
+harvestTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+harvestTitle.Parent = harvestPanel
 
--- Utility function for sequential layout positioning
-local yPos = CONTROL_Y_START
-local function getNextY(height)
-    local current = yPos
-    yPos = yPos + height + BUTTON_MARGIN 
-    return current
-end
-
--- HARVEST BUTTON
 local harvestButton = Instance.new("TextButton")
-harvestButton.Name = "HarvestButton"
-harvestButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT) 
-harvestButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT)) 
-harvestButton.Text = "RUN DEEP COMMAND HARVEST"
+harvestButton.Size = UDim2.new(1, -10, 0, 40)
+harvestButton.Position = UDim2.new(0, 5, 0, 35)
+harvestButton.Text = "RUN SMART HARVEST"
 harvestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 harvestButton.Font = Enum.Font.SourceSansBold
-harvestButton.TextSize = 16
-harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255) 
-harvestButton.Parent = mainPanel
+harvestButton.TextSize = 18
+harvestButton.BackgroundColor3 = Color3.fromRGB(130, 0, 255)
+harvestButton.Parent = harvestPanel
 
--- Search Input Box
-local searchBox = Instance.new("TextBox")
-searchBox.Size = UDim2.new(0.65, -10, 0, CONTROL_HEIGHT)
-searchBox.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
-searchBox.PlaceholderText = "Filter by name (e.g., 'data' or 'level')"
-searchBox.Text = "" 
-searchBox.Font = Enum.Font.SourceSans
-searchBox.TextSize = 14
-searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-searchBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-searchBox.Parent = mainPanel
-
--- Search/Filter Button
-local filterButton = Instance.new("TextButton")
-filterButton.Size = UDim2.new(0.35, 0, 0, CONTROL_HEIGHT)
-filterButton.Position = UDim2.new(0.65, 5, 0, yPos)
-filterButton.Text = "APPLY FILTER" 
-filterButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-filterButton.Font = Enum.Font.SourceSansBold
-filterButton.TextSize = 16
-filterButton.BackgroundColor3 = Color3.fromRGB(0, 150, 200) 
-filterButton.Parent = mainPanel
-
--- CLEAR LIST Button (New: Clears the display without re-harvesting)
-local clearListButton = Instance.new("TextButton")
-clearListButton.Size = UDim2.new(1, -10, 0, CONTROL_HEIGHT)
-clearListButton.Position = UDim2.new(0, 5, 0, getNextY(CONTROL_HEIGHT))
-clearListButton.Text = "CLEAR COMMAND LIST" 
-clearListButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-clearListButton.Font = Enum.Font.SourceSansBold
-clearListButton.TextSize = 16
-clearListButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) 
-clearListButton.Parent = mainPanel
-
--- Results Frame (List)
 local resultsFrame = Instance.new("ScrollingFrame")
-resultsFrame.Size = UDim2.new(1, -10, 0, RESULTS_LIST_HEIGHT) 
-resultsFrame.Position = UDim2.new(0, 5, 0, getNextY(RESULTS_LIST_HEIGHT))
+resultsFrame.Size = UDim2.new(1, -10, 1, -110)
+resultsFrame.Position = UDim2.new(0, 5, 0, 80)
 resultsFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 resultsFrame.BorderSizePixel = 0
 resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 resultsFrame.ScrollBarThickness = 6
-resultsFrame.Parent = mainPanel
+resultsFrame.Parent = harvestPanel
 
 local listLayout = Instance.new("UIListLayout")
 listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -266,230 +186,279 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Padding = UDim.new(0, 2)
 listLayout.Parent = resultsFrame
 
--- Status Output Console Label
-local outputLabel = Instance.new("TextLabel")
-outputLabel.Size = UDim2.new(1, -10, 0, 15)
-outputLabel.Position = UDim2.new(0, 5, 0, getNextY(15)) 
-outputLabel.Text = "Execution Status (0 Args):"
-outputLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-outputLabel.Font = Enum.Font.SourceSans
-outputLabel.TextSize = 14
-outputLabel.TextXAlignment = Enum.TextXAlignment.Left
-outputLabel.BackgroundTransparency = 1
-outputLabel.Parent = mainPanel
+-- RIGHT PANEL: COMMANDER
+local execPanel = Instance.new("Frame")
+execPanel.Size = UDim2.new(0.5, -10, 1, -40)
+execPanel.Position = UDim2.new(0.5, 5, 0, 35)
+execPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+execPanel.Parent = frame
 
--- STATUS OUTPUT CONSOLE 
-local statusOutput = Instance.new("TextBox")
-statusOutput.Size = UDim2.new(1, -10, 0, STATUS_OUTPUT_HEIGHT) 
-statusOutput.Position = UDim2.new(0, 5, 0, yPos) 
-statusOutput.Text = "Click 'RUN DEEP COMMAND HARVEST' to start scanning."
-statusOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
-statusOutput.Font = Enum.Font.SourceSans
-statusOutput.TextSize = 12 
-statusOutput.TextWrapped = true
-statusOutput.TextXAlignment = Enum.TextXAlignment.Left
-statusOutput.TextYAlignment = Enum.TextYAlignment.Top
-statusOutput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-statusOutput.MultiLine = true
-statusOutput.TextEditable = false
-statusOutput.Parent = mainPanel
+local execTitle = title:Clone()
+execTitle.Name = "ExecutorTitle"
+execTitle.Text = "STEP 2: REMOTE COMMANDER"
+execTitle.TextColor3 = Color3.fromRGB(255, 255, 100)
+execTitle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+execTitle.Parent = execPanel
 
+-- Path Box (Uneditable by user, set by Harvester)
+local pathLabel = Instance.new("TextLabel")
+pathLabel.Size = UDim2.new(1, -10, 0, 15)
+pathLabel.Position = UDim2.new(0, 5, 0, 35)
+pathLabel.Text = "Remote Path:"
+pathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+pathLabel.Font = Enum.Font.SourceSans
+pathLabel.TextSize = 14
+pathLabel.TextXAlignment = Enum.TextXAlignment.Left
+pathLabel.BackgroundTransparency = 1
+pathLabel.Parent = execPanel
+
+local pathBox = Instance.new("TextBox")
+pathBox.Size = UDim2.new(1, -10, 0, 30)
+pathBox.Position = UDim2.new(0, 5, 0, 50)
+pathBox.PlaceholderText = "Select a command on the left first."
+pathBox.Text = "" 
+pathBox.Font = Enum.Font.SourceSans
+pathBox.TextSize = 14
+pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+pathBox.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+pathBox.Parent = execPanel
+pathBox.TextEditable = false 
+
+-- Arguments Box
+local argsLabel = pathLabel:Clone()
+argsLabel.Position = UDim2.new(0, 5, 0, 85)
+argsLabel.Text = "Arguments (Edit the guessed values below):"
+argsLabel.Parent = execPanel
+
+local argsBox = pathBox:Clone()
+argsBox.Size = UDim2.new(1, -10, 0, 30)
+argsBox.Position = UDim2.new(0, 5, 0, 100)
+argsBox.PlaceholderText = "LocalPlayer, StatName, NewValue"
+argsBox.Text = "" 
+argsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+argsBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+argsBox.TextEditable = true
+argsBox.Parent = execPanel
+
+-- Argument Help Box 
+local argHelp = Instance.new("TextLabel")
+argHelp.Size = UDim2.new(1, -10, 0, 30)
+argHelp.Position = UDim2.new(0, 5, 0, 135)
+argHelp.Text = "TIPS: Use 'LocalPlayer' for yourself. Use 'PlayerName' (no quotes) for others."
+argHelp.TextColor3 = Color3.fromRGB(255, 255, 100)
+argHelp.Font = Enum.Font.SourceSans
+argHelp.TextSize = 14
+argHelp.TextXAlignment = Enum.TextXAlignment.Left
+argHelp.BackgroundTransparency = 1
+argHelp.TextWrapped = true
+argHelp.Parent = execPanel
+
+local execButton = harvestButton:Clone()
+execButton.Size = UDim2.new(1, -10, 0, 40)
+execButton.Position = UDim2.new(0, 5, 0, 170) 
+execButton.Text = "EXECUTE COMMAND"
+execButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+execButton.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
+execButton.Parent = execPanel
+
+-- Output Console
+local outputLabel = pathLabel:Clone()
+outputLabel.Position = UDim2.new(0, 5, 0, 215) 
+outputLabel.Text = "Execution Console Output:"
+outputLabel.Parent = execPanel
+
+local execOutput = Instance.new("TextBox")
+execOutput.Size = UDim2.new(1, -10, 1, -240) 
+execOutput.Position = UDim2.new(0, 5, 0, 230) 
+execOutput.Text = "Select a command on the left and enter arguments to begin."
+execOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
+execOutput.Font = Enum.Font.SourceSans
+execOutput.TextSize = 16
+execOutput.TextWrapped = true
+execOutput.TextXAlignment = Enum.TextXAlignment.Left
+execOutput.TextYAlignment = Enum.TextYAlignment.Top
+execOutput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+execOutput.MultiLine = true
+execOutput.TextEditable = false
+execOutput.Parent = execPanel
 
 -- ====================================================================
--- CONTROL & DISPLAY LOGIC 
+-- HARVESTER LOGIC (LEFT PANEL)
 -- ====================================================================
-
-local function ToggleVisibility()
-    isMinimized = not isMinimized
-
-    local targetHeight = isMinimized and MIN_HEIGHT or FULL_HEIGHT
-    local targetText = isMinimized and "+" or "-"
-    local targetVisible = not isMinimized
-
-    frame:TweenSize(UDim2.new(0, FULL_WIDTH, 0, targetHeight), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.2, true)
-    
-    minimizeButton.Text = targetText
-    mainPanel.Visible = targetVisible
-end
-
-local function UpdateStatus(text, color)
-    statusOutput.Text = text
-    statusOutput.TextColor3 = color
-    Log(text)
-end
 
 local function CreateRemoteButton(remoteData)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 25)
     btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
     btn.BorderColor3 = Color3.fromRGB(15, 15, 15)
+    btn.BorderSizePixel = 1
     btn.TextXAlignment = Enum.TextXAlignment.Left
     btn.Font = Enum.Font.SourceSans
     btn.TextSize = 14
     
-    -- Iconography based on type
-    local abbr, nameColor
-    if remoteData.Type == "RemoteEvent" then abbr = "RE"; nameColor = "#FFC04D" 
-    elseif remoteData.Type == "RemoteFunction" then abbr = "RF"; nameColor = "#4DFFFF" 
-    elseif remoteData.Type == "BindableEvent" then abbr = "BE"; nameColor = "#FF4DFF"
-    elseif remoteData.Type == "BindableFunction" then abbr = "BF"; nameColor = "#FF00FF"
-    end
-    
+    local nameColor = remoteData.Type == "RemoteEvent" and "#FFC04D" or "#4DFFFF" -- Yellow/Cyan
     local matchText = table.concat(remoteData.Categories, ", ")
-    local statusColor = matchText ~= "General" and "#FF9900" or "#AAAAAA" 
 
-    btn.Text = string.format("  <font color='%s'>%s</font> | %s | Status: <font color='%s'>%s</font>", 
+    btn.Text = string.format("  <font color='%s'>%s</font> | %s | Matches: %s", 
         nameColor, 
         remoteData.Name, 
-        abbr,
-        statusColor,
+        remoteData.Type:sub(1,1), -- Use abbreviation E/F/BE/BF
         matchText
     )
     btn.RichText = true
     btn.Parent = resultsFrame
 
-    -- One-Click Execution Logic
+    -- On Click, populate the executor panel
     btn.MouseButton1Click:Connect(function()
-        local Remote = remoteData.Instance
+        -- Store the direct object reference and update the GUI
+        selectedRemoteObject = remoteData.Instance
+        pathBox.Text = remoteData.Path 
+        pathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
         
-        UpdateStatus(string.format("Attempting to fire %s: %s (0 args)...", Remote.ClassName, Remote.Name), Color3.fromRGB(255, 165, 0))
+        local guessedArgs, hints = GuessArguments(remoteData.Name)
         
-        -- Execute with NO ARGUMENTS
-        local success, result = FireRemote(Remote, {}) 
-
-        if success then
-            local resultString = result and FormatArgument(result) or "nil"
-            UpdateStatus(
-                string.format("SUCCESS: %s fired.\nPath: %s\nReturn: %s", Remote.Name, remoteData.Path, resultString),
-                Color3.fromRGB(0, 255, 100)
-            )
-        else
-            UpdateStatus(
-                string.format("FAILURE: %s failed or error.\nPath: %s\nError: %s", Remote.Name, remoteData.Path, tostring(result)),
-                Color3.fromRGB(255, 0, 0)
-            )
-        end
+        argsBox.Text = guessedArgs -- Auto-fill the guess
+        
+        execOutput.Text = string.format(
+            "Command Selected: %s (%s)\nPath: %s\n\nGuessed Argument Format: %s\n\n---\n\n**Argument Testing Checklist:**\n%s\n\nTry the suggested formats and watch for a SUCCESS result!", 
+            remoteData.Name, 
+            remoteData.Type, 
+            remoteData.Path,
+            guessedArgs,
+            hints -- Show the required types based on the guess
+        )
+        execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
     end)
     
     return btn
 end
 
--- Filter logic based on currentSearchQuery
-local function FilterResults(query)
-    local filteredList = {}
-    local lowerQuery = string.lower(query or "")
-    
-    if lowerQuery == "" then
-        return foundRemotes 
-    end
-    
-    for _, remote in ipairs(foundRemotes) do
-        local lowerName = string.lower(remote.Name)
-        local lowerPath = string.lower(remote.Path)
-        
-        if string.find(lowerName, lowerQuery, 1, true) or 
-           string.find(lowerPath, lowerQuery, 1, true) then
-            table.insert(filteredList, remote)
-        end
-    end
-    
-    return filteredList
-end
-
-local function ClearCommandList()
-    -- Only destroy the buttons
+local function DisplayResults()
     for _, child in ipairs(resultsFrame:GetChildren()) do
         if child:IsA("TextButton") then child:Destroy() end
     end
-    -- Reset the scrollable height
-    resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    
-    UpdateStatus("Command list cleared. Run the harvester or click 'APPLY FILTER' to see commands.", Color3.fromRGB(150, 150, 150))
-end
 
-local function DisplayResults()
-    -- Step 1: Clear the list first (to handle filtering)
-    ClearCommandList()
-    
-    -- Step 2: Apply Filter 
-    local listToDisplay = FilterResults(currentSearchQuery) 
+    if #foundRemotes == 0 then
+        execOutput.Text = "No suspicious commands found. Security is extremely high."
+        resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        return
+    end
 
-    local totalItems = #listToDisplay
-    local totalFound = #foundRemotes
-
-    if totalFound == 0 then
-        -- No commands found at all
-        UpdateStatus(string.format("SCAN COMPLETE: Scanned %d instances. Zero commands found.", instancesScanned), Color3.fromRGB(255, 100, 0))
-    elseif totalItems == 0 and totalFound > 0 then
-        -- Commands were found, but none match the filter
-        UpdateStatus(string.format("No commands match the filter: '%s'. Total found: %d.", currentSearchQuery, totalFound), Color3.fromRGB(255, 165, 0))
-    else
-        -- Step 3: Create and display the buttons
-        for _, remote in ipairs(listToDisplay) do
-            CreateRemoteButton(remote)
-        end
-        
-        local statusText = totalItems == totalFound and 
-            string.format("SCAN COMPLETE: %d commands found. Click to execute with 0 arguments.", totalFound) or
-            string.format("FILTER APPLIED: Showing %d of %d commands. Click to execute with 0 arguments.", totalItems, totalFound)
-
-        UpdateStatus(statusText, Color3.fromRGB(0, 255, 100))
+    for _, remote in ipairs(foundRemotes) do
+        CreateRemoteButton(remote)
     end
     
-    -- Step 4: Adjust Canvas Size
-    local totalHeight = totalItems * 27 
+    local totalHeight = #foundRemotes * 27 
     resultsFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+    
+    Log(string.format("HARVEST COMPLETE: %d commands found.", #foundRemotes))
+    execOutput.Text = string.format("HARVEST COMPLETE: %d commands found. Scroll the left list and click one to select it.", #foundRemotes)
+    execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
 end
 
 local function RunRemoteScan()
-    -- Clear internal data before starting the scan
     table.clear(foundRemotes)
-    instancesScanned = 0
-    currentSearchQuery = "" -- Clear filter on new harvest
-
-    searchBox.Text = ""
-    harvestButton.Text = "HARVESTING... (2.5s Delay)"
+    selectedRemoteObject = nil -- Clear the selected object
+    Log("Starting SMART CODE HARVEST...")
+    
+    harvestButton.Text = "HARVESTING..."
     harvestButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
     
-    UpdateStatus("Starting deep scan for all callable objects in the game model...", Color3.fromRGB(255, 165, 0))
+    for _, service in ipairs(SERVICES_TO_SCAN) do
+        task.spawn(function()
+            -- Add a brief delay to prevent potential timeouts on huge games
+            DeepSearchForRemotes(service, "game." .. (service and service.Name or "nil"))
+        end)
+    end
     
-    -- Run deep search in a separate thread (coroutine)
-    local co = coroutine.wrap(function()
-        for _, service in ipairs(SERVICES_TO_SCAN) do
-            DeepSearchForRemotes(service, "game") 
-        end
-    end)
-    co()
+    -- Wait briefly for spawns to complete (crude, but works in executor environments)
+    task.wait(2) 
     
-    -- Allow time for the yield and scan to complete
-    task.wait(2.5) 
-
     DisplayResults()
     
-    harvestButton.Text = "RUN DEEP COMMAND HARVEST"
-    harvestButton.BackgroundColor3 = Color3.fromRGB(180, 0, 255)
+    harvestButton.Text = "RE-RUN SMART HARVEST"
+    harvestButton.BackgroundColor3 = Color3.fromRGB(130, 0, 255)
 end
-
--- ====================================================================
--- EVENT CONNECTIONS
--- ====================================================================
-
-minimizeButton.MouseButton1Click:Connect(ToggleVisibility)
 
 harvestButton.MouseButton1Click:Connect(function()
     task.spawn(RunRemoteScan)
 end)
 
-clearListButton.MouseButton1Click:Connect(ClearCommandList)
+-- ====================================================================
+-- EXECUTOR LOGIC (RIGHT PANEL)
+-- ====================================================================
 
-local function ApplyFilter()
-    currentSearchQuery = searchBox.Text
-    DisplayResults()
+local function ParseArguments(argString)
+    local args = {}
+    
+    if string.len(argString) == 0 then return args end
+    
+    -- Split by comma and trim whitespace
+    for part in string.gmatch(argString, "([^,]+)") do
+        part = string.gsub(part, "^%s*(.-)%s*$", "%1") -- Trim whitespace
+        
+        -- Try to interpret the type of the argument
+        local numberValue = tonumber(part)
+        if numberValue ~= nil then
+            table.insert(args, numberValue) -- Is a number
+        elseif string.lower(part) == "true" then
+            table.insert(args, true) -- Is boolean true
+        elseif string.lower(part) == "false" then
+            table.insert(args, false) -- Is boolean false
+        elseif string.lower(part) == "localplayer" then
+            table.insert(args, LocalPlayer) -- Pass the local player instance
+        elseif Players:FindFirstChild(part) then
+            table.insert(args, Players:FindFirstChild(part)) -- Pass a player instance by name
+        elseif string.lower(part) == "nil" then
+            table.insert(args, nil)
+        else
+            -- If it's none of the above, it's treated as a raw string (e.g., "StatName")
+            -- We assume the user is typing the string literal they want (e.g., "Luck" or "Sword")
+            table.insert(args, part) 
+        end
+    end
+    
+    return args
 end
 
-filterButton.MouseButton1Click:Connect(ApplyFilter)
-searchBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        ApplyFilter()
+execButton.MouseButton1Click:Connect(function()
+    local path = pathBox.Text 
+    local argString = argsBox.Text
+    
+    local Remote = selectedRemoteObject 
+
+    if not Remote or not IsCallableObject(Remote) then
+        execOutput.Text = "Execution Error: No valid command selected. Please click an item in the Harvester list first."
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+
+    local args = ParseArguments(argString)
+    
+    execOutput.Text = string.format("Attempting to fire %s: %s\nArguments: %s\n\nResult:", Remote.ClassName, Remote.Name, table.concat(args, ", "))
+    execOutput.TextColor3 = Color3.fromRGB(255, 165, 0)
+
+    local success, result
+    
+    if Remote:IsA("RemoteEvent") or Remote:IsA("BindableEvent") then
+        -- Fire for Events
+        success, result = pcall(function()
+            Remote:FireServer(unpack(args)) 
+        end)
+    elseif Remote:IsA("RemoteFunction") or Remote:IsA("BindableFunction") then
+        -- Invoke for Functions (waiting for a return value)
+        success, result = pcall(function()
+            return Remote:InvokeServer(unpack(args)) 
+        end)
+    end
+    
+    -- Final Report
+    if success then
+        local resultString = result and tostring(result) or "nil"
+        execOutput.Text = execOutput.Text .. "\nSUCCESS.\nServer Return: " .. resultString
+        execOutput.TextColor3 = Color3.fromRGB(0, 255, 100)
+    else
+        execOutput.Text = execOutput.Text .. "\nFAILURE.\nError Message: " .. tostring(result)
+        execOutput.TextColor3 = Color3.fromRGB(255, 0, 0)
     end
 end)
