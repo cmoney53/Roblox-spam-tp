@@ -1,11 +1,12 @@
 --[[
-    UNIVERSAL SINGLE-CLICK EXECUTOR v8
+    UNIVERSAL SINGLE-CLICK EXECUTOR v9 (HYBRID)
     
-    This tool is highly simplified:
-    1. Only harvests callable objects (Remote/Bindable).
-    2. Executes the command instantly upon click using ZERO ARGUMENTS ({}).
-    3. Provides direct execution feedback via console and status box.
-    4. Retains Search/Filter and Minimize functionality.
+    This version combines the robust harvesting logic from the larger commander tool
+    with the requested simplified execution model:
+    1. Harvests all Callable Objects (Remote/Bindable).
+    2. Executes the command INSTANTLY upon clicking the list button using ZERO ARGUMENTS ({}).
+    3. Includes Minimize and Search/Filter functionality.
+    4. Set to a larger height to display maximum results.
 ]]
 
 local Game = game
@@ -15,7 +16,7 @@ local HttpService = Game:GetService("HttpService")
 
 -- Configuration Constants
 local FULL_WIDTH = 450 
-local FULL_HEIGHT = 500 
+local FULL_HEIGHT = 500 -- Increased height to show more results
 local MIN_HEIGHT = 30
 local isMinimized = false
 local currentSearchQuery = "" -- Search query state
@@ -23,8 +24,8 @@ local currentSearchQuery = "" -- Search query state
 -- UI Layout Constants
 local CONTROL_HEIGHT = 30
 local CONTROL_Y_START = 5
-local RESULTS_LIST_HEIGHT = 330 -- Increased size for the list
-local STATUS_OUTPUT_HEIGHT = 80
+local RESULTS_LIST_HEIGHT = 330 -- Large list for all commands
+local STATUS_OUTPUT_HEIGHT = 65
 local statusOutputYOffset = 0 
 
 local SUSPICIOUS_KEYWORDS = {
@@ -56,7 +57,6 @@ end
 -- CORE HARVESTER & UTILITY FUNCTIONS 
 -- ====================================================================
 
--- Function to format a single argument for clean display in the output box
 local function FormatArgument(val)
     if type(val) == "string" then
         return string.format("\"%s\"", val)
@@ -166,7 +166,7 @@ frame.Parent = screenGui
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, MIN_HEIGHT) 
-title.Text = "Universal Single-Click Executor v8"
+title.Text = "Universal Single-Click Executor v9"
 title.TextColor3 = Color3.fromRGB(255, 100, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
@@ -269,7 +269,7 @@ statusOutputYOffset = yPos -- Capture current Y for text box positioning
 local statusOutput = Instance.new("TextBox")
 statusOutput.Size = UDim2.new(1, -10, 0, STATUS_OUTPUT_HEIGHT) 
 statusOutput.Position = UDim2.new(0, 5, 0, statusOutputYOffset) 
-statusOutput.Text = "Click 'SEARCH FOR ALL COMMANDS' to start."
+statusOutput.Text = "Click 'SEARCH FOR ALL COMMANDS' to start harvesting. Once found, click any command to fire it with zero arguments."
 statusOutput.TextColor3 = Color3.fromRGB(200, 200, 200)
 statusOutput.Font = Enum.Font.SourceSans
 statusOutput.TextSize = 12 
@@ -401,7 +401,7 @@ local function DisplayResults()
 
     if totalFound == 0 then
         -- No commands found (as requested: "like it never found none")
-        UpdateStatus("HARVEST COMPLETE: No callable commands (Remote/Bindable) found in the environment.", Color3.fromRGB(255, 100, 0))
+        UpdateStatus("SCAN COMPLETE: Zero callable commands (Remote/Bindable) found. This game environment is very locked down.", Color3.fromRGB(255, 100, 0))
     elseif totalItems == 0 then
         -- Commands were found, but none match the filter
         UpdateStatus(string.format("No commands match the filter: '%s'. Total commands found: %d.", currentSearchQuery, totalFound), Color3.fromRGB(255, 165, 0))
@@ -412,7 +412,7 @@ local function DisplayResults()
         end
         
         local statusText = totalItems == totalFound and 
-            string.format("HARVEST COMPLETE: %d commands found. Click to execute with 0 arguments.", totalFound) or
+            string.format("SCAN COMPLETE: %d commands found. Click to execute with 0 arguments.", totalFound) or
             string.format("FILTER APPLIED: Showing %d of %d commands. Click to execute with 0 arguments.", totalItems, totalFound)
 
         UpdateStatus(statusText, Color3.fromRGB(0, 255, 100))
